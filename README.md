@@ -787,11 +787,11 @@ which python
 If you use MAL-ZDA in your research, please cite:
 
 ```bibtex
-@article{daniel2024malzda,
+@article{daniel2025malzda,
   title={MAL-ZDA: Multi-level Adaptive Learning for Zero-Day Attack Detection},
   author={Daniel, Goodnews},
   journal={University of Johannesburg},
-  year={2024},
+  year={2025},
   department={Electrical \& Electronics Engineering},
   note={PhD Research}
 }
@@ -851,5 +851,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Last Updated**: November 2024  
+**Last Updated**: November 2025  
 **Status**: Production Ready ✅
