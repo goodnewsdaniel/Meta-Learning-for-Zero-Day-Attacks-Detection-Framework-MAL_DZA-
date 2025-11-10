@@ -1,0 +1,28 @@
+# Ignore dataset files
+dnsdos.csv
+dataset/dnsdos
+# Ignore results and model checkpoints
+results_malzda/
+*.pt
+*.png
+*.json
+*.txt
+
+# Ignore Python cache and environment files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore VS Code settings
+.vscode/
