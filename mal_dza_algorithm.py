@@ -718,7 +718,64 @@ class CompositionalTaskSampler:
 
         if len(available_classes) < self.n_way:
             raise ValueError(
-                f"Not enough classes ({len(available_classes)}) for {self.n_way}-way task")
+                f"Not enough classes ({len(available_classes)}) for {self.n_way}-way task"
+            )
+
+        selected_classes = np.random.choice(
+            available_classes, self.n_way, replace=False
+        )
+
+        support_indices = []
+        query_indices = []
+        support_labels = []
+        query_labels = []
+
+        for class_idx, class_id in enumerate(selected_classes):
+            available_phases = list(self.class_phase_indices[class_id].keys())
+
+            # Sample support from different phases
+            support_class_indices = []
+            for shot_idx in range(self.k_shot):
+                phase = available_phases[shot_idx % len(available_phases)]
+                phase_indices = self.class_phase_indices[class_id][phase]
+
+                if len(phase_indices) > 0:
+                    support_idx = np.random.choice(phase_indices)
+                    support_class_indices.append(support_idx)
+
+            support_indices.extend(support_class_indices[:self.k_shot])
+            support_labels.extend([class_idx] * self.k_shot)
+
+            # Sample query samples
+            all_query_indices = []
+            for phase in available_phases:
+                all_query_indices.extend(
+                    self.class_phase_indices[class_id][phase])
+
+            query_candidates = [idx for idx in all_query_indices
+                                if idx not in support_class_indices]
+
+            if len(query_candidates) >= self.n_query:
+                query_class_indices = np.random.choice(
+                    query_candidates, self.n_query, replace=False
+                )
+            else:
+                query_class_indices = query_candidates[:self.n_query]
+
+            query_indices.extend(query_class_indices)
+            query_labels.extend([class_idx] * len(query_class_indices))
+
+        support_set = [self.dataset[idx] for idx in support_indices]
+        query_set = [self.dataset[idx] for idx in query_indices]
+
+        return support_set, query_set, support_labels, query_labels
+
+    def _sample_standard_task(self):
+        """Sample standard few-shot task"""
+        available_classes = list(self.class_phase_indices.keys())
+
+        if len(available_classes) < self.n_way:
+            raise ValueError(f"Not enough classes for {self.n_way}-way task")
 
         selected_classes = np.random.choice(
             available_classes, self.n_way, replace=False
