@@ -1,4 +1,5 @@
 # Ignore dataset files
+dataset/
 dnsdos.csv
 dataset/dnsdos
 # Ignore results and model checkpoints

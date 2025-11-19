@@ -1,5 +1,5 @@
 ################################################
-'''   Goodnews Daniel (PhD Candidate)
+'''   Goodnews Daniel (PhD)
         222166453@student.uj.ac.za
 Department of Electrical & Electronics Engineering
 Faculty of Engineering & the Built Environment
@@ -638,8 +638,11 @@ class MALZDA(nn.Module):
         beta = torch.abs(self.beta)
         gamma = torch.abs(self.gamma)
 
+        # Get ordered class IDs for consistent indexing
+        class_ids = sorted(prototypes.keys())
+
         for i in range(batch_size):
-            for j, class_id in enumerate(prototypes.keys()):
+            for j, class_id in enumerate(class_ids):
                 proto = prototypes[class_id]
 
                 # Euclidean distances at each level
@@ -744,7 +747,8 @@ class CompositionalTaskSampler:
                     support_class_indices.append(support_idx)
 
             support_indices.extend(support_class_indices[:self.k_shot])
-            support_labels.extend([class_idx] * self.k_shot)
+            support_labels.extend(
+                [class_idx] * len(support_class_indices[:self.k_shot]))
 
             # Sample query samples
             all_query_indices = []
@@ -1278,7 +1282,221 @@ def visualize_training_results(
         RESULTS_DIR / f'{save_prefix}_results.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"Visualization saved to {save_prefix}_results.png")
+    print(f"Combined visualization saved to {save_prefix}_results.png")
+
+    # Now create individual visualizations
+    _save_individual_training_loss(train_losses, save_prefix)
+    _save_individual_training_accuracy(train_accuracies, save_prefix)
+    _save_individual_metrics_boxplot(eval_results, save_prefix)
+    _save_individual_accuracy_histogram(eval_results, save_prefix)
+    _save_individual_confusion_matrix(eval_results, save_prefix)
+    _save_individual_metrics_table(eval_results, save_prefix)
+
+
+def _save_individual_training_loss(train_losses: List[float], save_prefix: str):
+    """Save individual training loss visualization"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(train_losses, alpha=0.3, label='Episode Loss', color='blue')
+    if len(train_losses) > 50:
+        ax.plot(
+            pd.Series(train_losses).rolling(50).mean(),
+            label='Moving Average (50)', linewidth=2, color='darkblue'
+        )
+    ax.set_xlabel('Episode', fontsize=12)
+    ax.set_ylabel('Loss', fontsize=12)
+    ax.set_title('Training Loss Curve', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_training_loss.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Individual training loss saved to {save_prefix}_training_loss.png")
+
+
+def _save_individual_training_accuracy(train_accuracies: List[float], save_prefix: str):
+    """Save individual training accuracy visualization"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(train_accuracies, alpha=0.3,
+            label='Episode Accuracy', color='green')
+    if len(train_accuracies) > 50:
+        ax.plot(
+            pd.Series(train_accuracies).rolling(50).mean(),
+            label='Moving Average (50)', linewidth=2, color='darkgreen'
+        )
+    ax.set_xlabel('Episode', fontsize=12)
+    ax.set_ylabel('Accuracy', fontsize=12)
+    ax.set_title('Training Accuracy Curve', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_training_accuracy.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual training accuracy saved to {save_prefix}_training_accuracy.png")
+
+
+def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str):
+    """Save individual metrics boxplot visualization"""
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    metrics_data = {
+        'Accuracy': eval_results['accuracies'],
+        'F1 Score': eval_results['f1_scores'],
+        'Precision': eval_results['precisions'],
+        'Recall': eval_results['recalls']
+    }
+
+    bp = ax.boxplot(
+        [metrics_data[k] for k in metrics_data.keys()],
+        labels=list(metrics_data.keys()),
+        patch_artist=True
+    )
+    for patch in bp['boxes']:
+        patch.set_facecolor('lightblue')
+        patch.set_edgecolor('black')
+        patch.set_linewidth(1.5)
+
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('Evaluation Metrics Distribution',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.tick_params(axis='x', rotation=15)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_metrics_boxplot.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual metrics boxplot saved to {save_prefix}_metrics_boxplot.png")
+
+
+def _save_individual_accuracy_histogram(eval_results: Dict, save_prefix: str):
+    """Save individual accuracy histogram visualization"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.hist(eval_results['accuracies'], bins=20,
+            edgecolor='black', alpha=0.7, color='skyblue')
+    ax.axvline(
+        np.mean(eval_results['accuracies']),
+        color='red', linestyle='--', linewidth=2,
+        label=f"Mean: {np.mean(eval_results['accuracies']):.3f}"
+    )
+    ax.axvline(
+        np.median(eval_results['accuracies']),
+        color='green', linestyle='--', linewidth=2,
+        label=f"Median: {np.median(eval_results['accuracies']):.3f}"
+    )
+    ax.set_xlabel('Accuracy', fontsize=12)
+    ax.set_ylabel('Frequency', fontsize=12)
+    ax.set_title('Test Accuracy Distribution', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_accuracy_histogram.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual accuracy histogram saved to {save_prefix}_accuracy_histogram.png")
+
+
+def _save_individual_confusion_matrix(eval_results: Dict, save_prefix: str):
+    """Save individual confusion matrix visualization"""
+    if len(eval_results['all_predictions']) == 0:
+        print(f"Skipping confusion matrix for {save_prefix} (no predictions)")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    cm = confusion_matrix(
+        eval_results['all_labels'], eval_results['all_predictions'])
+
+    im = ax.imshow(cm, cmap='Blues', aspect='auto')
+    ax.set_xlabel('Predicted Label', fontsize=12)
+    ax.set_ylabel('True Label', fontsize=12)
+    ax.set_title('Confusion Matrix', fontsize=14, fontweight='bold')
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('Count', fontsize=11)
+
+    # Add text annotations
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            text = ax.text(j, i, cm[i, j],
+                           ha="center", va="center", color="black", fontsize=9)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual confusion matrix saved to {save_prefix}_confusion_matrix.png")
+
+
+def _save_individual_metrics_table(eval_results: Dict, save_prefix: str):
+    """Save individual metrics summary table visualization"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    summary_data = [
+        ['Accuracy', f"{np.mean(eval_results['accuracies']):.4f}",
+         f"±{np.std(eval_results['accuracies']):.4f}"],
+        ['F1 Score', f"{np.mean(eval_results['f1_scores']):.4f}",
+         f"±{np.std(eval_results['f1_scores']):.4f}"],
+        ['Precision', f"{np.mean(eval_results['precisions']):.4f}",
+         f"±{np.std(eval_results['precisions']):.4f}"],
+        ['Recall', f"{np.mean(eval_results['recalls']):.4f}",
+         f"±{np.std(eval_results['recalls']):.4f}"]
+    ]
+
+    ax.axis('tight')
+    ax.axis('off')
+
+    table = ax.table(
+        cellText=summary_data,
+        colLabels=['Metric', 'Mean', 'Std Dev'],
+        loc='center',
+        cellLoc='center',
+        colWidths=[0.3, 0.3, 0.3]
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.scale(1, 2.5)
+
+    # Style the header
+    for i in range(3):
+        table[(0, i)].set_facecolor('#4CAF50')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    # Alternate row colors
+    for i in range(1, len(summary_data) + 1):
+        for j in range(3):
+            if i % 2 == 0:
+                table[(i, j)].set_facecolor('#f0f0f0')
+            else:
+                table[(i, j)].set_facecolor('#ffffff')
+
+    plt.title('Performance Summary Table',
+              fontsize=14, fontweight='bold', pad=20)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_prefix}_metrics_table.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Individual metrics table saved to {save_prefix}_metrics_table.png")
 
 
 def create_comparison_visualization(results_comp: Dict, results_std: Dict, save_name: str = "comparison"):
@@ -1338,12 +1556,21 @@ def create_comparison_visualization(results_comp: Dict, results_std: Dict, save_
 
     x = np.arange(len(metrics))
     width = 0.35
-    axes[1, 1].bar(x - width/2, comp_means, width,
-                   label='Compositional', color='lightblue', edgecolor='black')
-    axes[1, 1].bar(x + width/2, std_means, width, label='Standard',
-                   color='lightcoral', edgecolor='black')
+    bars1 = axes[1, 1].bar(x - width/2, comp_means, width,
+                           label='Compositional', color='lightblue', edgecolor='black', linewidth=1.5)
+    bars2 = axes[1, 1].bar(x + width/2, std_means, width, label='Standard',
+                           color='lightcoral', edgecolor='black', linewidth=1.5)
+
+    # Add value labels on bars
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            axes[1, 1].text(bar.get_x() + bar.get_width()/2., height,
+                            f'{height:.3f}',
+                            ha='center', va='bottom', fontsize=10)
+
     axes[1, 1].set_ylabel('Score')
-    axes[1, 1].set_title('Mean Metrics Comparison')
+    axes[1, 1].set_title('All Metrics Comparison')
     axes[1, 1].set_xticks(x)
     axes[1, 1].set_xticklabels(metrics, rotation=15, ha='right')
     axes[1, 1].legend()
@@ -1354,6 +1581,140 @@ def create_comparison_visualization(results_comp: Dict, results_std: Dict, save_
     plt.close()
 
     print(f"Comparison visualization saved to {save_name}.png")
+
+    # Create individual comparison charts
+    _save_individual_accuracy_comparison(results_comp, results_std, save_name)
+    _save_individual_f1_comparison(results_comp, results_std, save_name)
+    _save_individual_precision_recall_scatter(
+        results_comp, results_std, save_name)
+    _save_individual_metrics_bar_chart(results_comp, results_std, save_name)
+
+
+def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, save_name: str):
+    """Save individual accuracy comparison"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    data_acc = [results_comp['accuracies'], results_std['accuracies']]
+    bp = ax.boxplot(
+        data_acc, labels=['Compositional', 'Standard'], patch_artist=True)
+    bp['boxes'][0].set_facecolor('lightblue')
+    bp['boxes'][0].set_edgecolor('black')
+    bp['boxes'][1].set_facecolor('lightcoral')
+    bp['boxes'][1].set_edgecolor('black')
+
+    ax.set_ylabel('Accuracy', fontsize=12)
+    ax.set_title('Accuracy Comparison: Compositional vs Standard',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_accuracy_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual accuracy comparison saved to {save_name}_accuracy_comparison.png")
+
+
+def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_name: str):
+    """Save individual F1 score comparison"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    data_f1 = [results_comp['f1_scores'], results_std['f1_scores']]
+    bp = ax.boxplot(
+        data_f1, labels=['Compositional', 'Standard'], patch_artist=True)
+    bp['boxes'][0].set_facecolor('lightblue')
+    bp['boxes'][0].set_edgecolor('black')
+    bp['boxes'][1].set_facecolor('lightcoral')
+    bp['boxes'][1].set_edgecolor('black')
+
+    ax.set_ylabel('F1 Score', fontsize=12)
+    ax.set_title('F1 Score Comparison: Compositional vs Standard',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_f1_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Individual F1 comparison saved to {save_name}_f1_comparison.png")
+
+
+def _save_individual_precision_recall_scatter(results_comp: Dict, results_std: Dict, save_name: str):
+    """Save individual precision-recall scatter plot"""
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    ax.scatter(
+        results_comp['precisions'], results_comp['recalls'],
+        alpha=0.6, label='Compositional', s=80, color='blue', edgecolor='black'
+    )
+    ax.scatter(
+        results_std['precisions'], results_std['recalls'],
+        alpha=0.6, label='Standard', s=80, color='red', edgecolor='black'
+    )
+    ax.set_xlabel('Precision', fontsize=12)
+    ax.set_ylabel('Recall', fontsize=12)
+    ax.set_title('Precision-Recall Comparison', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_precision_recall_scatter.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual precision-recall scatter saved to {save_name}_precision_recall_scatter.png")
+
+
+def _save_individual_metrics_bar_chart(results_comp: Dict, results_std: Dict, save_name: str):
+    """Save individual metrics bar chart comparison"""
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    metrics = ['Accuracy', 'F1 Score', 'Precision', 'Recall']
+    comp_means = [
+        np.mean(results_comp['accuracies']),
+        np.mean(results_comp['f1_scores']),
+        np.mean(results_comp['precisions']),
+        np.mean(results_comp['recalls'])
+    ]
+    std_means = [
+        np.mean(results_std['accuracies']),
+        np.mean(results_std['f1_scores']),
+        np.mean(results_std['precisions']),
+        np.mean(results_std['recalls'])
+    ]
+
+    x = np.arange(len(metrics))
+    width = 0.35
+    bars1 = ax.bar(x - width/2, comp_means, width,
+                   label='Compositional', color='lightblue', edgecolor='black', linewidth=1.5)
+    bars2 = ax.bar(x + width/2, std_means, width, label='Standard',
+                   color='lightcoral', edgecolor='black', linewidth=1.5)
+
+    # Add value labels on bars
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.3f}',
+                    ha='center', va='bottom', fontsize=10)
+
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('All Metrics Comparison', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics, rotation=15, ha='right')
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_metrics_bar_chart.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual metrics bar chart saved to {save_name}_metrics_bar_chart.png")
 
 
 def visualize_ablation_results(ablation_results: Dict, save_name: str = "ablation"):
@@ -1372,8 +1733,9 @@ def visualize_ablation_results(ablation_results: Dict, save_name: str = "ablatio
     # Accuracy
     axes[0].bar(x, accuracies, yerr=acc_stds, capsize=5,
                 color='skyblue', edgecolor='black', alpha=0.8)
-    axes[0].set_ylabel('Accuracy')
-    axes[0].set_title('Ablation Study: Accuracy by Configuration')
+    axes[0].set_ylabel('Accuracy', fontsize=12)
+    axes[0].set_title('Ablation Study: Accuracy by Configuration',
+                      fontsize=14, fontweight='bold')
     axes[0].set_xticks(x)
     axes[0].set_xticklabels(configs, rotation=45, ha='right')
     axes[0].grid(True, alpha=0.3, axis='y')
@@ -1383,8 +1745,9 @@ def visualize_ablation_results(ablation_results: Dict, save_name: str = "ablatio
     # F1 Score
     axes[1].bar(x, f1_scores, yerr=f1_stds, capsize=5,
                 color='lightcoral', edgecolor='black', alpha=0.8)
-    axes[1].set_ylabel('F1 Score')
-    axes[1].set_title('Ablation Study: F1 Score by Configuration')
+    axes[1].set_ylabel('F1 Score', fontsize=12)
+    axes[1].set_title('Ablation Study: F1 Score by Configuration',
+                      fontsize=14, fontweight='bold')
     axes[1].set_xticks(x)
     axes[1].set_xticklabels(configs, rotation=45, ha='right')
     axes[1].grid(True, alpha=0.3, axis='y')
@@ -1396,6 +1759,78 @@ def visualize_ablation_results(ablation_results: Dict, save_name: str = "ablatio
     plt.close()
 
     print(f"Ablation visualization saved to {save_name}.png")
+
+    # Create individual visualizations
+    _save_individual_ablation_accuracy(ablation_results, save_name)
+    _save_individual_ablation_f1(ablation_results, save_name)
+
+
+def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str):
+    """Save individual ablation accuracy chart"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    configs = list(ablation_results.keys())
+    accuracies = [ablation_results[c]['accuracy'] for c in configs]
+    acc_stds = [ablation_results[c]['accuracy_std'] for c in configs]
+
+    x = np.arange(len(configs))
+    bars = ax.bar(x, accuracies, yerr=acc_stds, capsize=8,
+                  color='skyblue', edgecolor='black', alpha=0.8, linewidth=1.5)
+
+    # Add value labels
+    for i, (bar, acc) in enumerate(zip(bars, accuracies)):
+        ax.text(bar.get_x() + bar.get_width()/2., acc,
+                f'{acc:.3f}',
+                ha='center', va='bottom', fontsize=10)
+
+    ax.set_ylabel('Accuracy', fontsize=12)
+    ax.set_title('Ablation Study: Accuracy by Configuration',
+                 fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(configs, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_ylim([0, max(accuracies) * 1.2] if max(accuracies) > 0 else [0, 1])
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_accuracy.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Individual ablation accuracy saved to {save_name}_accuracy.png")
+
+
+def _save_individual_ablation_f1(ablation_results: Dict, save_name: str):
+    """Save individual ablation F1 score chart"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    configs = list(ablation_results.keys())
+    f1_scores = [ablation_results[c]['f1'] for c in configs]
+    f1_stds = [ablation_results[c]['f1_std'] for c in configs]
+
+    x = np.arange(len(configs))
+    bars = ax.bar(x, f1_scores, yerr=f1_stds, capsize=8,
+                  color='lightcoral', edgecolor='black', alpha=0.8, linewidth=1.5)
+
+    # Add value labels
+    for i, (bar, f1) in enumerate(zip(bars, f1_scores)):
+        ax.text(bar.get_x() + bar.get_width()/2., f1,
+                f'{f1:.3f}',
+                ha='center', va='bottom', fontsize=10)
+
+    ax.set_ylabel('F1 Score', fontsize=12)
+    ax.set_title('Ablation Study: F1 Score by Configuration',
+                 fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(configs, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_ylim([0, max(f1_scores) * 1.2] if max(f1_scores) > 0 else [0, 1])
+
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / f'{save_name}_f1.png',
+                dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Individual ablation F1 saved to {save_name}_f1.png")
 
 
 def visualize_scaling_results(scaling_results: Dict, save_name: str = "scaling"):
@@ -1416,9 +1851,10 @@ def visualize_scaling_results(scaling_results: Dict, save_name: str = "scaling")
         marker='o', markersize=10, linewidth=2, capsize=5,
         color='blue', label='Accuracy'
     )
-    axes[0].set_xlabel('Number of Support Examples (k-shot)')
-    axes[0].set_ylabel('Accuracy')
-    axes[0].set_title('Model Performance vs Support Set Size')
+    axes[0].set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
+    axes[0].set_ylabel('Accuracy', fontsize=12)
+    axes[0].set_title('Model Performance vs Support Set Size',
+                      fontsize=14, fontweight='bold')
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
     axes[0].set_xticks(k_shots)
@@ -1430,9 +1866,10 @@ def visualize_scaling_results(scaling_results: Dict, save_name: str = "scaling")
     axes[1].plot(k_shots, precisions, marker='^',
                  linewidth=2, label='Precision')
     axes[1].plot(k_shots, recalls, marker='v', linewidth=2, label='Recall')
-    axes[1].set_xlabel('Number of Support Examples (k-shot)')
-    axes[1].set_ylabel('Score')
-    axes[1].set_title('All Metrics vs Support Set Size')
+    axes[1].set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
+    axes[1].set_ylabel('Score', fontsize=12)
+    axes[1].set_title('All Metrics vs Support Set Size',
+                      fontsize=14, fontweight='bold')
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
     axes[1].set_xticks(k_shots)
@@ -1443,10 +1880,78 @@ def visualize_scaling_results(scaling_results: Dict, save_name: str = "scaling")
 
     print(f"Scaling visualization saved to {save_name}.png")
 
+    # Create individual visualizations
+    _save_individual_scaling_accuracy(scaling_results, save_name)
+    _save_individual_scaling_all_metrics(scaling_results, save_name)
 
-################################################
-# SECTION 9: ABLATION STUDIES                  #
-################################################
+
+def _save_individual_scaling_accuracy(scaling_results: Dict, save_name: str):
+    """Save individual scaling accuracy chart"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    k_shots = list(scaling_results.keys())
+    accuracies = [scaling_results[k]['accuracy'] for k in k_shots]
+    acc_stds = [scaling_results[k]['accuracy_std'] for k in k_shots]
+
+    ax.errorbar(
+        k_shots, accuracies, yerr=acc_stds,
+        marker='o', markersize=12, linewidth=2.5, capsize=8,
+        color='blue', ecolor='darkblue', label='Accuracy', elinewidth=2
+    )
+    ax.set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
+    ax.set_ylabel('Accuracy', fontsize=12)
+    ax.set_title('Model Accuracy vs Support Set Size (k-shot)',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=11)
+    ax.set_xticks(k_shots)
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_accuracy_scaling.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual scaling accuracy saved to {save_name}_accuracy_scaling.png")
+
+
+def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
+    """Save individual scaling all metrics chart"""
+    fig, ax = plt.subplots(figsize=(13, 7))
+
+    k_shots = list(scaling_results.keys())
+    accuracies = [scaling_results[k]['accuracy'] for k in k_shots]
+    f1_scores = [scaling_results[k]['f1'] for k in k_shots]
+    precisions = [scaling_results[k]['precision'] for k in k_shots]
+    recalls = [scaling_results[k]['recall'] for k in k_shots]
+
+    ax.plot(k_shots, accuracies, marker='o', markersize=10,
+            linewidth=2.5, label='Accuracy', color='blue')
+    ax.plot(k_shots, f1_scores, marker='s', markersize=10,
+            linewidth=2.5, label='F1 Score', color='green')
+    ax.plot(k_shots, precisions, marker='^', markersize=10,
+            linewidth=2.5, label='Precision', color='red')
+    ax.plot(k_shots, recalls, marker='v', markersize=10,
+            linewidth=2.5, label='Recall', color='purple')
+
+    ax.set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('All Metrics vs Support Set Size',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=11, loc='best')
+    ax.set_xticks(k_shots)
+    ax.set_ylim([min(min(accuracies), min(f1_scores),
+                min(precisions), min(recalls)) - 0.05, 1.05])
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_all_metrics.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual scaling all metrics saved to {save_name}_all_metrics.png")
+
 
 def run_ablation_study(
     dataset_train: CyberSecurityDataset,
@@ -1527,9 +2032,9 @@ def run_ablation_study(
     if ablation_results:
         visualize_ablation_results(ablation_results)
 
-        # Save results
-        with open(RESULTS_DIR / 'ablation_results.json', 'w') as f:
-            json.dump(ablation_results, f, indent=2)
+    # Save results
+    with open(RESULTS_DIR / 'ablation_results.json', 'w') as f:
+        json.dump(ablation_results, f, indent=2)
 
     return ablation_results
 
@@ -1579,7 +2084,8 @@ def main():
                 stratify=y
             )
 
-            print(f"\nTrain set: {X_train.shape}, Test set: {X_test.shape}")
+            print(
+                f"\nTrain set: {X_train.shape}, Test set: {X_test.shape}")
 
             # Create datasets
             dataset_train = CyberSecurityDataset(
@@ -1700,7 +2206,8 @@ def main():
     print("="*80)
 
     create_comparison_visualization(
-        results_comp, results_std, "compositional_vs_standard")
+        results_comp, results_std, "compositional_vs_standard"
+    )
 
     # EXPERIMENT 2: Ablation Study
     print("\n" + "="*80)
