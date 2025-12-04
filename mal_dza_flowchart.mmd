@@ -1,0 +1,25 @@
+graph TD
+    A[Start] --> B[Initialize Encoders f_p, f_f, f_c and Weights α, β, γ]
+    B --> C{Not Converged?}
+    C -- Yes --> D[L_batch = 0]
+    D --> E[For i = 1 to BatchSize]
+    E --> F[Sample Task: S_i, Q_i]
+    F --> G[For k = 1 to N Classes]
+    G --> H["S_i,k = examples for class k in S_i"]
+    H --> I["Compute Prototypes:<br/>c_k^p = Mean(f_p(S_i,k))<br/>c_k^f = Mean(f_f(S_i,k))<br/>c_k^c = Mean(f_c(S_i,k))"]
+    I --> J{More classes?}
+    J -- Yes --> G
+    J -- No --> K[L_task = 0]
+    K --> L["For (x,y) in Q_i"]
+    L --> M["z_p, z_f, z_c = f_p(x), f_f(x), f_c(x)"]
+    M --> N["p(y given x) = Compute using Eq. 1<br/>with prototypes and embeddings"]
+    N --> O["L_task = L_task - log p(y given x)"]
+    O --> P{More queries?}
+    P -- Yes --> L
+    P -- No --> Q[L_batch = L_batch + L_task]
+    Q --> R{More tasks?}
+    R -- Yes --> E
+    R -- No --> S["Update f_p, f_f, f_c, α, β, γ<br/>using gradient ∇L_batch"]
+    S --> C
+    C -- No --> T["Return f_p, f_f, f_c, α, β, γ"]
+    T --> U[End]
