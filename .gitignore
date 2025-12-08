@@ -2,6 +2,9 @@
 dataset/
 dnsdos.csv
 dataset/dnsdos
+processed/
+cicids2017_csvs/
+
 # Ignore results and model checkpoints
 results_malzda/
 *.pt
