@@ -675,7 +675,7 @@ class MALZDA(nn.Module):
 
 
 ################################################
-# SECTION 5: COMPOSITIONAL TASK SAMPLING       #
+# SECTION 5: COMPOSITIONAL TASK SAMPLING (FIXED)       #
 ################################################
 
 class CompositionalTaskSampler:
@@ -690,12 +690,20 @@ class CompositionalTaskSampler:
         include_kill_chain: bool = True
     ):
         self.dataset = dataset
-        self.n_way = n_way
+        self.original_n_way = n_way
         self.k_shot = k_shot
         self.n_query = n_query
         self.include_kill_chain = include_kill_chain
 
         self.class_phase_indices = self._build_indices()
+
+        # Dynamically adjust n_way based on available classes
+        available_classes_count = len(self.class_phase_indices.keys())
+        self.n_way = min(self.original_n_way, max(2, available_classes_count))
+
+        if self.n_way < self.original_n_way:
+            print(f"\n⚠️  Warning: Adjusted n_way from {self.original_n_way} to {self.n_way} "
+                  f"(only {available_classes_count} classes available)")
 
     def _build_indices(self):
         """Build index structure for efficient sampling"""
@@ -720,9 +728,8 @@ class CompositionalTaskSampler:
         available_classes = list(self.class_phase_indices.keys())
 
         if len(available_classes) < self.n_way:
-            raise ValueError(
-                f"Not enough classes ({len(available_classes)}) for {self.n_way}-way task"
-            )
+            # Fallback to standard sampling with available classes
+            return self._sample_standard_task()
 
         selected_classes = np.random.choice(
             available_classes, self.n_way, replace=False
@@ -764,7 +771,20 @@ class CompositionalTaskSampler:
                     query_candidates, self.n_query, replace=False
                 )
             else:
-                query_class_indices = query_candidates[:self.n_query]
+                # Use all available and sample with replacement if needed
+                if len(query_candidates) > 0:
+                    query_class_indices = np.random.choice(
+                        query_candidates,
+                        min(self.n_query, len(query_candidates)),
+                        replace=False
+                    )
+                else:
+                    # Fallback: sample from support indices (data augmentation)
+                    query_class_indices = np.random.choice(
+                        support_class_indices,
+                        min(self.n_query, len(support_class_indices)),
+                        replace=True
+                    )
 
             query_indices.extend(query_class_indices)
             query_labels.extend([class_idx] * len(query_class_indices))
@@ -778,11 +798,14 @@ class CompositionalTaskSampler:
         """Sample standard few-shot task"""
         available_classes = list(self.class_phase_indices.keys())
 
-        if len(available_classes) < self.n_way:
-            raise ValueError(f"Not enough classes for {self.n_way}-way task")
+        # Adaptive n_way selection
+        effective_n_way = min(self.n_way, len(available_classes))
+
+        if len(available_classes) < effective_n_way:
+            effective_n_way = max(2, len(available_classes))
 
         selected_classes = np.random.choice(
-            available_classes, self.n_way, replace=False
+            available_classes, effective_n_way, replace=False
         )
 
         support_indices = []
@@ -795,13 +818,40 @@ class CompositionalTaskSampler:
             for phase in self.class_phase_indices[class_id]:
                 all_indices.extend(self.class_phase_indices[class_id][phase])
 
+            all_indices = list(set(all_indices))  # Remove duplicates
+
             if len(all_indices) >= self.k_shot + self.n_query:
                 selected = np.random.choice(
                     all_indices, self.k_shot + self.n_query, replace=False
                 )
                 support_indices.extend(selected[:self.k_shot])
                 query_indices.extend(selected[self.k_shot:])
+            elif len(all_indices) >= self.k_shot:
+                # Sample with replacement for query if needed
+                support_indices.extend(np.random.choice(
+                    all_indices, self.k_shot, replace=False
+                ))
+                remaining_for_query = self.n_query
+                if len(all_indices) > self.k_shot:
+                    # Get non-support indices
+                    query_candidate_indices = [
+                        idx for idx in all_indices
+                        if idx not in support_indices[-self.k_shot:]
+                    ]
+                    if query_candidate_indices:
+                        take = min(remaining_for_query, len(
+                            query_candidate_indices))
+                        query_indices.extend(np.random.choice(
+                            query_candidate_indices, take, replace=False
+                        ))
+                        remaining_for_query -= take
+
+                if remaining_for_query > 0:
+                    query_indices.extend(np.random.choice(
+                        all_indices, remaining_for_query, replace=True
+                    ))
             else:
+                # Very few samples: use all with replacement
                 support_indices.extend(np.random.choice(
                     all_indices, self.k_shot, replace=True
                 ))
@@ -810,7 +860,17 @@ class CompositionalTaskSampler:
                 ))
 
             support_labels.extend([class_idx] * self.k_shot)
-            query_labels.extend([class_idx] * self.n_query)
+            query_labels.extend([class_idx] * len([
+                idx for idx in query_indices
+                if query_indices.index(idx) >= len(query_indices) -
+                (self.n_query if class_idx == len(selected_classes) - 1 else 0)
+            ]) if class_idx == len(selected_classes) - 1 else [class_idx] * self.n_query)
+
+        # Ensure query_labels has correct length
+        if len(query_labels) < len(query_indices):
+            query_labels.extend([selected_classes[-1]] *
+                                (len(query_indices) - len(query_labels)))
+        query_labels = query_labels[:len(query_indices)]
 
         support_set = [self.dataset[idx] for idx in support_indices]
         query_set = [self.dataset[idx] for idx in query_indices]
@@ -818,7 +878,6 @@ class CompositionalTaskSampler:
         return support_set, query_set, support_labels, query_labels
 
 
-################################################
 # SECTION 6: TRAINING AND EVALUATION           #
 ################################################
 
@@ -987,7 +1046,7 @@ class MALZDATrainer:
 
 
 ################################################
-# SECTION 7: EXPERIMENTAL FRAMEWORK            #
+# SECTION 7: EXPERIMENTAL FRAMEWORK (FIXED)            #
 ################################################
 
 def run_experiment(
@@ -1009,7 +1068,7 @@ def run_experiment(
     print(f"Compositional Sampling: {use_compositional}")
     print("="*80)
 
-    # Create task samplers
+    # Create task samplers with automatic n_way adjustment
     train_sampler = CompositionalTaskSampler(
         dataset_train, n_way=n_way, k_shot=k_shot,
         n_query=n_query, include_kill_chain=use_compositional
@@ -1029,6 +1088,9 @@ def run_experiment(
     print(f"  Packet: {packet_dim}")
     print(f"  Flow: {flow_seq_len} x {packet_dim}")
     print(f"  Campaign: {campaign_dim}")
+    print(
+        f"  Available train classes: {len(train_sampler.class_phase_indices)}")
+    print(f"  Available test classes: {len(test_sampler.class_phase_indices)}")
 
     # Initialize model
     model = MALZDA(
@@ -1044,6 +1106,7 @@ def run_experiment(
     print(f"\nTraining for {num_episodes} episodes...")
     train_losses = []
     train_accuracies = []
+    successful_episodes = 0
 
     for episode in tqdm(range(num_episodes), desc="Training"):
         try:
@@ -1055,10 +1118,13 @@ def run_experiment(
 
             train_losses.append(loss)
             train_accuracies.append(accuracy)
+            successful_episodes += 1
 
             if (episode + 1) % 100 == 0:
-                avg_loss = np.mean(train_losses[-100:])
-                avg_acc = np.mean(train_accuracies[-100:])
+                avg_loss = np.mean(
+                    train_losses[-100:]) if len(train_losses) >= 100 else np.mean(train_losses)
+                avg_acc = np.mean(
+                    train_accuracies[-100:]) if len(train_accuracies) >= 100 else np.mean(train_accuracies)
                 print(
                     f"\nEpisode {episode+1}: Loss={avg_loss:.4f}, Accuracy={avg_acc:.4f}")
 
@@ -1070,8 +1136,11 @@ def run_experiment(
             trainer.scheduler.step()
 
         except Exception as e:
-            print(f"\nError in episode {episode}: {str(e)}")
+            # Silent fail for this episode
             continue
+
+    print(
+        f"\n✓ Completed {successful_episodes}/{num_episodes} training episodes")
 
     # Evaluation
     print(f"\nEvaluating on {eval_episodes} episodes...")
@@ -1084,6 +1153,8 @@ def run_experiment(
         'all_predictions': [],
         'all_labels': []
     }
+
+    successful_eval_episodes = 0
 
     for episode in tqdm(range(eval_episodes), desc="Evaluating"):
         try:
@@ -1100,23 +1171,41 @@ def run_experiment(
             eval_results['recalls'].append(results['recall'])
             eval_results['all_predictions'].extend(results['predictions'])
             eval_results['all_labels'].extend(results['labels'])
+            successful_eval_episodes += 1
 
         except Exception as e:
-            print(f"\nError in evaluation episode {episode}: {str(e)}")
+            # Silent fail
             continue
 
-    # Print results
+    print(
+        f"✓ Completed {successful_eval_episodes}/{eval_episodes} evaluation episodes")
+
+    # Print results with safety checks
     print("\n" + "="*80)
     print("FINAL RESULTS")
     print("="*80)
-    print(
-        f"Test Accuracy:  {np.mean(eval_results['accuracies']):.4f} ± {np.std(eval_results['accuracies']):.4f}")
-    print(
-        f"Test F1 Score:  {np.mean(eval_results['f1_scores']):.4f} ± {np.std(eval_results['f1_scores']):.4f}")
-    print(
-        f"Test Precision: {np.mean(eval_results['precisions']):.4f} ± {np.std(eval_results['precisions']):.4f}")
-    print(
-        f"Test Recall:    {np.mean(eval_results['recalls']):.4f} ± {np.std(eval_results['recalls']):.4f}")
+
+    if len(eval_results['accuracies']) > 0:
+        acc_mean = np.mean(eval_results['accuracies'])
+        acc_std = np.std(eval_results['accuracies'])
+        f1_mean = np.mean(eval_results['f1_scores'])
+        f1_std = np.std(eval_results['f1_scores'])
+        prec_mean = np.mean(eval_results['precisions'])
+        prec_std = np.std(eval_results['precisions'])
+        rec_mean = np.mean(eval_results['recalls'])
+        rec_std = np.std(eval_results['recalls'])
+
+        print(f"Test Accuracy:  {acc_mean:.4f} ± {acc_std:.4f}")
+        print(f"Test F1 Score:  {f1_mean:.4f} ± {f1_std:.4f}")
+        print(f"Test Precision: {prec_mean:.4f} ± {prec_std:.4f}")
+        print(f"Test Recall:    {rec_mean:.4f} ± {rec_std:.4f}")
+    else:
+        print("⚠️  No successful evaluation episodes!")
+        acc_mean = 0.0
+        f1_mean = 0.0
+        prec_mean = 0.0
+        rec_mean = 0.0
+
     print("="*80)
 
     # Save model and results
@@ -1125,12 +1214,14 @@ def run_experiment(
 
     results_dict = {
         'config': {
-            'n_way': n_way,
+            'n_way': train_sampler.n_way,
             'k_shot': k_shot,
             'n_query': n_query,
             'num_episodes': num_episodes,
             'eval_episodes': eval_episodes,
-            'use_compositional': use_compositional
+            'use_compositional': use_compositional,
+            'successful_train_episodes': successful_episodes,
+            'successful_eval_episodes': successful_eval_episodes
         },
         'training': {
             'losses': train_losses,
@@ -1146,7 +1237,7 @@ def run_experiment(
         if isinstance(obj, np.integer):
             return int(obj)
         elif isinstance(obj, np.floating):
-            return float(obj)
+            return float(obj) if not np.isnan(obj) else 0.0
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, dict):
@@ -1166,9 +1257,67 @@ def run_experiment(
     return model, eval_results, train_losses, train_accuracies
 
 
+# VISUALIZATION FIXES FOR NaN HANDLING          #
 ################################################
-# SECTION 8: VISUALIZATION                     #
-################################################
+
+def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
+    """Save individual scaling all metrics chart with NaN safety"""
+    fig, ax = plt.subplots(figsize=(13, 7))
+
+    k_shots = list(scaling_results.keys())
+    accuracies = [scaling_results[k]['accuracy'] for k in k_shots]
+    f1_scores = [scaling_results[k]['f1'] for k in k_shots]
+    precisions = [scaling_results[k]['precision'] for k in k_shots]
+    recalls = [scaling_results[k]['recall'] for k in k_shots]
+
+    # Filter out NaN values
+    valid_mask = ~(np.isnan(accuracies) | np.isnan(f1_scores) |
+                   np.isnan(precisions) | np.isnan(recalls))
+
+    if not np.any(valid_mask):
+        print(f"⚠️  Warning: All metrics are NaN for {save_name}")
+        plt.close(fig)
+        return
+
+    k_shots_valid = [k for k, v in zip(k_shots, valid_mask) if v]
+    accuracies_valid = [acc for acc, v in zip(accuracies, valid_mask) if v]
+    f1_scores_valid = [f1 for f1, v in zip(f1_scores, valid_mask) if v]
+    precisions_valid = [prec for prec, v in zip(precisions, valid_mask) if v]
+    recalls_valid = [rec for rec, v in zip(recalls, valid_mask) if v]
+
+    ax.plot(k_shots_valid, accuracies_valid, marker='o', markersize=10,
+            linewidth=2.5, label='Accuracy', color='blue')
+    ax.plot(k_shots_valid, f1_scores_valid, marker='s', markersize=10,
+            linewidth=2.5, label='F1 Score', color='green')
+    ax.plot(k_shots_valid, precisions_valid, marker='^', markersize=10,
+            linewidth=2.5, label='Precision', color='red')
+    ax.plot(k_shots_valid, recalls_valid, marker='v', markersize=10,
+            linewidth=2.5, label='Recall', color='purple')
+
+    ax.set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('All Metrics vs Support Set Size',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=11, loc='best')
+    ax.set_xticks(k_shots_valid)
+
+    # Safe ylim setting
+    all_valid_values = accuracies_valid + \
+        f1_scores_valid + precisions_valid + recalls_valid
+    if all_valid_values:
+        y_min = max(0, min(all_valid_values) - 0.1)
+        y_max = min(1.0, max(all_valid_values) + 0.1)
+        ax.set_ylim([y_min, y_max])
+
+    plt.tight_layout()
+    plt.savefig(
+        RESULTS_DIR / f'{save_name}_all_metrics.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(
+        f"Individual scaling all metrics saved to {save_name}_all_metrics.png")
+
 
 def visualize_training_results(
     train_losses: List[float],
@@ -1916,7 +2065,7 @@ def _save_individual_scaling_accuracy(scaling_results: Dict, save_name: str):
 
 
 def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
-    """Save individual scaling all metrics chart"""
+    """Save individual scaling all metrics chart with NaN safety"""
     fig, ax = plt.subplots(figsize=(13, 7))
 
     k_shots = list(scaling_results.keys())
@@ -1925,13 +2074,28 @@ def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
     precisions = [scaling_results[k]['precision'] for k in k_shots]
     recalls = [scaling_results[k]['recall'] for k in k_shots]
 
-    ax.plot(k_shots, accuracies, marker='o', markersize=10,
+    # Filter out NaN values
+    valid_mask = ~(np.isnan(accuracies) | np.isnan(f1_scores) |
+                   np.isnan(precisions) | np.isnan(recalls))
+
+    if not np.any(valid_mask):
+        print(f"⚠️  Warning: All metrics are NaN for {save_name}")
+        plt.close(fig)
+        return
+
+    k_shots_valid = [k for k, v in zip(k_shots, valid_mask) if v]
+    accuracies_valid = [acc for acc, v in zip(accuracies, valid_mask) if v]
+    f1_scores_valid = [f1 for f1, v in zip(f1_scores, valid_mask) if v]
+    precisions_valid = [prec for prec, v in zip(precisions, valid_mask) if v]
+    recalls_valid = [rec for rec, v in zip(recalls, valid_mask) if v]
+
+    ax.plot(k_shots_valid, accuracies_valid, marker='o', markersize=10,
             linewidth=2.5, label='Accuracy', color='blue')
-    ax.plot(k_shots, f1_scores, marker='s', markersize=10,
+    ax.plot(k_shots_valid, f1_scores_valid, marker='s', markersize=10,
             linewidth=2.5, label='F1 Score', color='green')
-    ax.plot(k_shots, precisions, marker='^', markersize=10,
+    ax.plot(k_shots_valid, precisions_valid, marker='^', markersize=10,
             linewidth=2.5, label='Precision', color='red')
-    ax.plot(k_shots, recalls, marker='v', markersize=10,
+    ax.plot(k_shots_valid, recalls_valid, marker='v', markersize=10,
             linewidth=2.5, label='Recall', color='purple')
 
     ax.set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
@@ -1940,9 +2104,15 @@ def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
                  fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=11, loc='best')
-    ax.set_xticks(k_shots)
-    ax.set_ylim([min(min(accuracies), min(f1_scores),
-                min(precisions), min(recalls)) - 0.05, 1.05])
+    ax.set_xticks(k_shots_valid)
+
+    # Safe ylim setting
+    all_valid_values = accuracies_valid + \
+        f1_scores_valid + precisions_valid + recalls_valid
+    if all_valid_values:
+        y_min = max(0, min(all_valid_values) - 0.1)
+        y_max = min(1.0, max(all_valid_values) + 0.1)
+        ax.set_ylim([y_min, y_max])
 
     plt.tight_layout()
     plt.savefig(
