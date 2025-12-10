@@ -343,103 +343,116 @@ class CyberSecurityDataset(Dataset):
 
         return flow_seq
 
-    def _generate_synthetic_data(self, num_classes: int, samples_per_class: int):
-        """Generate synthetic data"""
-        self.num_classes = num_classes
-        self.samples_per_class = samples_per_class
+    def _generate_packet_features(self, base_pattern: np.ndarray,
+                                  class_id: int) -> np.ndarray:
+        """Generate packet-level features with class-specific characteristics"""
+        features = base_pattern.copy()
 
+        # Safe feature dimension handling
+        feature_dim = len(features)
+
+        # Class-specific noise pattern
+        class_noise = 0.1 + (class_id * 0.05)
+        features += np.random.normal(0, class_noise, feature_dim)
+
+        # Add class-specific spike patterns (safe bounds checking)
+        spike_strength = 0.5 + (class_id * 0.2)
+        spike_positions = np.random.choice(
+            feature_dim, size=max(1, feature_dim // 5), replace=False
+        )
+        features[spike_positions] += spike_strength
+
+        # Add temporal correlation pattern
+        for i in range(1, min(10, feature_dim)):
+            features[i] += 0.3 * features[i-1]
+
+        # Clip to prevent extreme values
+        features = np.clip(features, -5, 5)
+
+        return features
+
+    def _generate_flow_sequence(self, base_pattern: np.ndarray,
+                                temporal_length: int, class_id: int) -> np.ndarray:
+        """Generate flow-level temporal sequence"""
+        sequence = np.zeros((temporal_length, len(base_pattern)))
+
+        for t in range(temporal_length):
+            # Evolving pattern over time
+            time_factor = 1.0 + (0.1 * t / max(1, temporal_length - 1))
+            sequence[t] = base_pattern * time_factor
+
+            # Add class-specific evolution
+            class_evolution = 0.05 * (class_id + 1)
+            sequence[t] += np.random.normal(0,
+                                            class_evolution, len(base_pattern))
+
+        # Clip to prevent extreme values
+        sequence = np.clip(sequence, -5, 5)
+
+        return sequence
+
+    def _generate_campaign_context(self, base_pattern: np.ndarray,
+                                   class_id: int) -> np.ndarray:
+        """Generate campaign-level context features"""
+        feature_dim = len(base_pattern)
+
+        # Create multi-scale representation
+        campaign_features = np.concatenate([
+            base_pattern,  # Original features
+            np.roll(base_pattern, 1),  # Shifted features
+            base_pattern ** 2,  # Squared features
+            np.abs(np.diff(np.concatenate([[0], base_pattern])))  # Differences
+        ])
+
+        # Add class-specific context
+        context_noise = 0.05 + (class_id * 0.02)
+        campaign_features += np.random.normal(0,
+                                              context_noise, len(campaign_features))
+
+        # Clip to prevent extreme values
+        campaign_features = np.clip(campaign_features, -5, 5)
+
+        return campaign_features
+
+    def _generate_synthetic_data(self, num_classes: int,
+                                 samples_per_class: int) -> None:
+        """Generate synthetic cyber security dataset"""
         self.data = []
-        self.labels = []
-        self.kill_chain_labels = []
-
-        print(
-            f"Generating synthetic data: {num_classes} classes, {samples_per_class} samples/class")
 
         for class_id in range(num_classes):
-            base_pattern = np.random.normal(0, 1, self.feature_dim)
+            # Class-specific base pattern
+            base_pattern = np.sin(
+                np.linspace(0, 4 * np.pi, self.feature_dim) +
+                (class_id * np.pi / num_classes)
+            )
 
             for sample_id in range(samples_per_class):
+                # Generate hierarchical features
                 packet_features = self._generate_packet_features(
                     base_pattern, class_id)
-                flow_features = self._generate_flow_features(
-                    packet_features, class_id)
-                campaign_features = self._generate_campaign_features(
-                    flow_features, class_id)
-                kill_chain_phase = self._assign_kill_chain_phase(
-                    class_id, sample_id)
+                flow_sequence = self._generate_flow_sequence(
+                    base_pattern, self.temporal_length, class_id
+                )
+                campaign_context = self._generate_campaign_context(
+                    base_pattern, class_id
+                )
 
+                # Random kill-chain phase assignment
+                kill_chain_phase = np.random.randint(0, 5)
+
+                # Create sample
                 sample = {
                     'packet': packet_features,
-                    'flow': flow_features,
-                    'campaign': campaign_features,
+                    'flow': flow_sequence,
+                    'campaign': campaign_context,
                     'class_id': class_id,
                     'kill_chain': kill_chain_phase
                 }
 
                 self.data.append(sample)
-                self.labels.append(class_id)
-                self.kill_chain_labels.append(kill_chain_phase)
 
-        print(f"Generated {len(self.data)} synthetic samples")
-
-    def _generate_packet_features(self, base_pattern: np.ndarray, class_id: int) -> np.ndarray:
-        """Generate packet-level features"""
-        features = base_pattern + np.random.normal(0, 0.1, len(base_pattern))
-
-        if class_id % 3 == 0:
-            features[:50] += np.random.normal(1.0, 0.2, min(50, len(features)))
-        elif class_id % 3 == 1:
-            mid = len(features) // 2
-            features[mid:mid +
-                     50] += np.random.normal(0.8, 0.3, min(50, len(features)-mid))
-        else:
-            end = min(150, len(features))
-            features[100:end] += np.random.normal(1.2, 0.25, end-100)
-
-        return features.astype(np.float32)
-
-    def _generate_flow_features(self, packet_features: np.ndarray, class_id: int) -> np.ndarray:
-        """Generate flow-level temporal sequences"""
-        flow_seq = np.zeros(
-            (self.temporal_length, len(packet_features)), dtype=np.float32)
-
-        for t in range(self.temporal_length):
-            flow_seq[t] = packet_features + \
-                np.random.normal(0, 0.05, len(packet_features))
-
-            if class_id % 4 == 0:
-                if t % 20 < 5:
-                    flow_seq[t] += np.random.normal(0.5,
-                                                    0.1, len(packet_features))
-            elif class_id % 4 == 1:
-                flow_seq[t] += np.random.normal(0.2,
-                                                0.05, len(packet_features))
-            elif class_id % 4 == 2:
-                flow_seq[t] += np.sin(t * 0.5) * 0.3
-
-        return flow_seq
-
-    def _generate_campaign_features(self, flow_features: np.ndarray, class_id: int) -> np.ndarray:
-        """Generate campaign-level aggregated features"""
-        return np.concatenate([
-            np.mean(flow_features, axis=0),
-            np.std(flow_features, axis=0),
-            np.max(flow_features, axis=0),
-            np.min(flow_features, axis=0)
-        ]).astype(np.float32)
-
-    def _assign_kill_chain_phase(self, class_id: int, sample_id: int) -> int:
-        """Assign kill-chain phase"""
-        phases_weights = {
-            0: [0.7, 0.2, 0.05, 0.03, 0.02],
-            1: [0.0, 0.6, 0.3, 0.05, 0.05],
-            2: [0.0, 0.1, 0.7, 0.15, 0.05],
-            3: [0.0, 0.05, 0.1, 0.7, 0.15],
-            4: [0.0, 0.0, 0.05, 0.15, 0.8]
-        }
-        phase_probs = phases_weights.get(
-            class_id % 5, [0.2, 0.2, 0.2, 0.2, 0.2])
-        return np.random.choice(len(phase_probs), p=phase_probs)
+        print(f"✓ Generated {len(self.data)} synthetic samples "
+              f"({num_classes} classes × {samples_per_class} samples)")
 
     def __len__(self):
         return len(self.data)
@@ -1611,34 +1624,16 @@ def _save_individual_metrics_table(eval_results: Dict, save_prefix: str):
 
     ax.axis('tight')
     ax.axis('off')
-
     table = ax.table(
         cellText=summary_data,
         colLabels=['Metric', 'Mean', 'Std Dev'],
         loc='center',
-        cellLoc='center',
-        colWidths=[0.3, 0.3, 0.3]
+        cellLoc='center'
     )
-
     table.auto_set_font_size(False)
-    table.set_fontsize(12)
-    table.scale(1, 2.5)
-
-    # Style the header
-    for i in range(3):
-        table[(0, i)].set_facecolor('#4CAF50')
-        table[(0, i)].set_text_props(weight='bold', color='white')
-
-    # Alternate row colors
-    for i in range(1, len(summary_data) + 1):
-        for j in range(3):
-            if i % 2 == 0:
-                table[(i, j)].set_facecolor('#f0f0f0')
-            else:
-                table[(i, j)].set_facecolor('#ffffff')
-
-    plt.title('Performance Summary Table',
-              fontsize=14, fontweight='bold', pad=20)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+    ax.set_title('Performance Summary')
 
     plt.tight_layout()
     plt.savefig(
@@ -2395,7 +2390,7 @@ def main():
 
     # EXPERIMENT 3: Few-Shot Scaling
     print("\n" + "="*80)
-    print("EXPERIMENT 3: Few-Shot Scaling Experiment")
+    print("EXPERIMENT 3: FEW-SHOT SCALING EXPERIMENT")
     print("="*80)
 
     k_shot_values = [1, 3, 5, 10]
