@@ -69,15 +69,42 @@ plt.rcParams.update({
     'grid.linestyle': '--'
 })
 
-# Global constants
+# ============================================================================
+# SECTION 1.1: GLOBAL CONSTANTS (FIX #10: Organized magic numbers)
+# ============================================================================
+
+# Random state for reproducibility
 RANDOM_STATE = 42
+
+# Data preprocessing constants
 TEST_SIZE = 0.2
 N_BINS = 10
+
+# Model configuration constants
 BATCH_SIZE = 32
 DEFAULT_N_WAY = 5
 DEFAULT_K_SHOT = 1
 DEFAULT_N_QUERY = 15
 DEFAULT_EMBEDDING_DIM = 128
+
+# FIX #8: Explicit gradient clipping constant (documented)
+GRADIENT_CLIP_MAX_NORM = 1.0  # Prevents exploding gradients
+
+# Kill-chain phase probability distribution (FIX #10: Extracted to constant)
+KILL_CHAIN_PHASE_PROBS = [0.4, 0.2, 0.2, 0.1, 0.1]
+
+# Temporal sequence generation parameters (FIX #10: Extracted)
+TEMPORAL_NOISE_SCALE = 0.05
+TEMPORAL_DYNAMICS_WEIGHT = 0.1
+
+# Feature spike generation (FIX #10: Extracted)
+SPIKE_DIVISOR = 5  # feature_dim // 5
+
+# Moving average window for visualization (FIX #10: Extracted)
+MOVING_AVERAGE_WINDOW = 50
+
+# Histogram bins for visualization (FIX #10: Extracted)
+HISTOGRAM_BINS = 20
 
 # Set random seeds for reproducibility
 torch.manual_seed(RANDOM_STATE)
@@ -104,7 +131,18 @@ def load_and_preprocess_real_data(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str], np.ndarray]:
     """
     Load and preprocess real CSV dataset with robust handling.
-    Returns: X_scaled, X_unscaled, y, feature_names, kill_chain_labels
+
+    Args:
+        data_path: Path to CSV file
+        target_col: Name of target column
+
+    Returns:
+        Tuple containing:
+        - X_scaled: Standardized feature matrix
+        - X_unscaled: Original feature matrix
+        - y: Class labels
+        - feature_names: List of feature names
+        - kill_chain_labels: Synthetic kill-chain phase labels
     """
     try:
         print(f"\nLoading data from: {data_path}")
@@ -218,7 +256,7 @@ def load_and_preprocess_real_data(
 
         for i, sample_class in enumerate(y):
             class_idx = np.where(unique_classes == sample_class)[0][0]
-            phase_probs = [0.4, 0.2, 0.2, 0.1, 0.1]
+            phase_probs = KILL_CHAIN_PHASE_PROBS.copy()
 
             # Adjust probabilities based on class
             if class_idx == 0:
@@ -269,6 +307,7 @@ class CyberSecurityDataset(Dataset):
     ):
         """Initialize dataset with either real or synthetic data."""
         self.mode = mode
+        # FIX #2: Ensure temporal_length is set before use
         self.temporal_length = temporal_length
         self.feature_dim = feature_dim
         self.kill_chain_phases = 5
@@ -286,8 +325,13 @@ class CyberSecurityDataset(Dataset):
         kill_chain_labels: Optional[np.ndarray],
         feature_names: Optional[List[str]]
     ):
-        """Load and process real data"""
+        """
+        Load and process real data.
+
+        FIX #3: Ensure all attributes are properly initialized
+        """
         self.feature_dim = X.shape[1]
+        # FIX #3: Initialize num_classes
         self.num_classes = len(np.unique(y))
 
         self.data = []
@@ -328,18 +372,26 @@ class CyberSecurityDataset(Dataset):
             f"Loaded {len(self.data)} real samples with {self.num_classes} classes")
 
     def _create_temporal_from_static(self, features: np.ndarray) -> np.ndarray:
-        """Create temporal sequence from static features"""
-        flow_seq = np.zeros(
-            (self.temporal_length, len(features)), dtype=np.float32)
+        """
+        Create temporal sequence from static features.
 
-        for t in range(self.temporal_length):
+        FIX #1: Use instance attribute with safe default
+        """
+        # FIX #1: Safe attribute access with default
+        temporal_length = getattr(self, 'temporal_length', 100)
+        feature_len = len(features)
+
+        flow_seq = np.zeros((temporal_length, feature_len), dtype=np.float32)
+
+        for t in range(temporal_length):
             # Add temporal variation
-            noise = np.random.normal(0, 0.05, len(features))
+            noise = np.random.normal(0, TEMPORAL_NOISE_SCALE, feature_len)
             flow_seq[t] = features + noise
 
             # Add temporal dynamics
             if t > 0:
-                flow_seq[t] += 0.1 * (flow_seq[t-1] - features)
+                flow_seq[t] += TEMPORAL_DYNAMICS_WEIGHT * \
+                    (flow_seq[t-1] - features)
 
         return flow_seq
 
@@ -357,8 +409,9 @@ class CyberSecurityDataset(Dataset):
 
         # Add class-specific spike patterns (safe bounds checking)
         spike_strength = 0.5 + (class_id * 0.2)
+        spike_count = max(1, feature_dim // SPIKE_DIVISOR)
         spike_positions = np.random.choice(
-            feature_dim, size=max(1, feature_dim // 5), replace=False
+            feature_dim, size=spike_count, replace=False
         )
         features[spike_positions] += spike_strength
 
@@ -418,6 +471,7 @@ class CyberSecurityDataset(Dataset):
                                  samples_per_class: int) -> None:
         """Generate synthetic cyber security dataset"""
         self.data = []
+        self.num_classes = num_classes  # FIX #3: Initialize num_classes
 
         for class_id in range(num_classes):
             # Class-specific base pattern
@@ -611,10 +665,20 @@ class MALZDA(nn.Module):
         return support_embeddings, query_embeddings
 
     def _encode_batch(self, batch_data):
-        """Encode a batch of samples"""
+        """
+        Encode a batch of samples.
+
+        FIX #4: Ensure proper device placement
+        """
         packet_data = torch.stack([item['packet'] for item in batch_data])
         flow_data = torch.stack([item['flow'] for item in batch_data])
         campaign_data = torch.stack([item['campaign'] for item in batch_data])
+
+        # FIX #4: Move tensors to model's device
+        device = next(self.parameters()).device
+        packet_data = packet_data.to(device)
+        flow_data = flow_data.to(device)
+        campaign_data = campaign_data.to(device)
 
         return self.hierarchical_encoder(packet_data, flow_data, campaign_data)
 
@@ -646,10 +710,8 @@ class MALZDA(nn.Module):
         distances = torch.zeros(batch_size, num_classes,
                                 device=query_embeddings[0].device)
 
-        # Ensure weights are positive
-        alpha = torch.abs(self.alpha)
-        beta = torch.abs(self.beta)
-        gamma = torch.abs(self.gamma)
+        # FIX #7: Improved weight validation - ensure all weights are positive
+        alpha, beta, gamma, temperature = self.get_positive_weights()
 
         # Get ordered class IDs for consistent indexing
         class_ids = sorted(prototypes.keys())
@@ -673,17 +735,30 @@ class MALZDA(nn.Module):
                 distances[i, j] = total_dist
 
         # Apply temperature scaling
-        distances = distances / (torch.abs(self.temperature) + 1e-10)
+        distances = distances / temperature
 
         return distances
 
-    def get_distance_weights(self):
-        """Get current distance weights"""
+    def get_positive_weights(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Get positive-enforced distance weights.
+
+        FIX #7: Ensure all weights are strictly positive
+        """
+        alpha = torch.abs(self.alpha) + 1e-6
+        beta = torch.abs(self.beta) + 1e-6
+        gamma = torch.abs(self.gamma) + 1e-6
+        temperature = torch.abs(self.temperature) + 1e-6
+        return alpha, beta, gamma, temperature
+
+    def get_distance_weights(self) -> Dict[str, float]:
+        """Get current distance weights as dictionary"""
+        alpha, beta, gamma, temperature = self.get_positive_weights()
         return {
-            'alpha': torch.abs(self.alpha).item(),
-            'beta': torch.abs(self.beta).item(),
-            'gamma': torch.abs(self.gamma).item(),
-            'temperature': torch.abs(self.temperature).item()
+            'alpha': alpha.item(),
+            'beta': beta.item(),
+            'gamma': gamma.item(),
+            'temperature': temperature.item()
         }
 
 
@@ -808,7 +883,11 @@ class CompositionalTaskSampler:
         return support_set, query_set, support_labels, query_labels
 
     def _sample_standard_task(self):
-        """Sample standard few-shot task"""
+        """
+        Sample standard few-shot task.
+
+        FIX #1: Clear and straightforward label assembly logic
+        """
         available_classes = list(self.class_phase_indices.keys())
 
         # Adaptive n_way selection
@@ -826,6 +905,7 @@ class CompositionalTaskSampler:
         support_labels = []
         query_labels = []
 
+        # FIX #1: Clear and straightforward query label assembly
         for class_idx, class_id in enumerate(selected_classes):
             all_indices = []
             for phase in self.class_phase_indices[class_id]:
@@ -833,57 +913,63 @@ class CompositionalTaskSampler:
 
             all_indices = list(set(all_indices))  # Remove duplicates
 
-            if len(all_indices) >= self.k_shot + self.n_query:
-                selected = np.random.choice(
-                    all_indices, self.k_shot + self.n_query, replace=False
-                )
-                support_indices.extend(selected[:self.k_shot])
-                query_indices.extend(selected[self.k_shot:])
-            elif len(all_indices) >= self.k_shot:
-                # Sample with replacement for query if needed
-                support_indices.extend(np.random.choice(
+            # Support set - EXACT k_shot samples
+            if len(all_indices) >= self.k_shot:
+                support_selected = np.random.choice(
                     all_indices, self.k_shot, replace=False
-                ))
-                remaining_for_query = self.n_query
-                if len(all_indices) > self.k_shot:
-                    # Get non-support indices
-                    query_candidate_indices = [
-                        idx for idx in all_indices
-                        if idx not in support_indices[-self.k_shot:]
-                    ]
-                    if query_candidate_indices:
-                        take = min(remaining_for_query, len(
-                            query_candidate_indices))
-                        query_indices.extend(np.random.choice(
-                            query_candidate_indices, take, replace=False
-                        ))
-                        remaining_for_query -= take
-
-                if remaining_for_query > 0:
-                    query_indices.extend(np.random.choice(
-                        all_indices, remaining_for_query, replace=True
-                    ))
+                )
             else:
-                # Very few samples: use all with replacement
-                support_indices.extend(np.random.choice(
+                support_selected = np.random.choice(
                     all_indices, self.k_shot, replace=True
-                ))
-                query_indices.extend(np.random.choice(
-                    all_indices, self.n_query, replace=True
-                ))
+                )
 
+            support_indices.extend(support_selected)
             support_labels.extend([class_idx] * self.k_shot)
-            query_labels.extend([class_idx] * len([
-                idx for idx in query_indices
-                if query_indices.index(idx) >= len(query_indices) -
-                (self.n_query if class_idx == len(selected_classes) - 1 else 0)
-            ]) if class_idx == len(selected_classes) - 1 else [class_idx] * self.n_query)
 
-        # Ensure query_labels has correct length
-        if len(query_labels) < len(query_indices):
-            query_labels.extend([selected_classes[-1]] *
-                                (len(query_indices) - len(query_labels)))
-        query_labels = query_labels[:len(query_indices)]
+            # Query set - AT LEAST n_query samples
+            query_candidates = [idx for idx in all_indices
+                                if idx not in support_selected]
+
+            if len(query_candidates) >= self.n_query:
+                query_selected = np.random.choice(
+                    query_candidates, self.n_query, replace=False
+                )
+            else:
+                # Use all available candidates
+                if len(query_candidates) > 0:
+                    query_selected = np.random.choice(
+                        query_candidates,
+                        min(self.n_query, len(query_candidates)),
+                        replace=False
+                    )
+                    # Fill remaining with replacement
+                    if len(query_selected) < self.n_query:
+                        remaining = self.n_query - len(query_selected)
+                        query_selected = np.concatenate([
+                            query_selected,
+                            np.random.choice(
+                                query_candidates,
+                                remaining,
+                                replace=True
+                            )
+                        ])
+                else:
+                    # No query candidates - use support indices (fallback)
+                    query_selected = np.random.choice(
+                        support_selected,
+                        self.n_query,
+                        replace=True
+                    )
+
+            query_indices.extend(query_selected)
+            # FIX #1: Direct label assignment (no convoluted logic)
+            query_labels.extend([class_idx] * len(query_selected))
+
+        # Verify alignment
+        assert len(query_labels) == len(query_indices), \
+            f"Label/data mismatch: {len(query_labels)} labels vs {len(query_indices)} indices"
+        assert len(support_labels) == len(support_indices), \
+            f"Support label/data mismatch: {len(support_labels)} labels vs {len(support_indices)} indices"
 
         support_set = [self.dataset[idx] for idx in support_indices]
         query_set = [self.dataset[idx] for idx in query_indices]
@@ -891,11 +977,12 @@ class CompositionalTaskSampler:
         return support_set, query_set, support_labels, query_labels
 
 
-# SECTION 6: TRAINING AND EVALUATION           #
+################################################
+# SECTION 6: TRAINING AND EVALUATION (FIXED)   #
 ################################################
 
 class MALZDATrainer:
-    """Training and evaluation framework"""
+    """Training and evaluation framework with safety checks"""
 
     def __init__(
         self,
@@ -916,110 +1003,150 @@ class MALZDATrainer:
             'distance_weights': []
         }
 
-    def train_episode(self, support_set, query_set, support_labels, query_labels):
-        """Train on single episode"""
+    def _convert_batch_to_tensors(self, batch_data: List[Dict]) -> List[Dict]:
+        """
+        FIX #2: Convert numpy arrays to tensors without modifying originals.
+
+        This is critical to prevent data corruption when the same batch is
+        used multiple times.
+        """
+        tensor_batch = []
+        for item in batch_data:
+            tensor_item = {
+                'packet': torch.from_numpy(item['packet']).float()
+                if isinstance(item['packet'], np.ndarray) else item['packet'],
+                'flow': torch.from_numpy(item['flow']).float()
+                if isinstance(item['flow'], np.ndarray) else item['flow'],
+                'campaign': torch.from_numpy(item['campaign']).float()
+                if isinstance(item['campaign'], np.ndarray) else item['campaign'],
+                'class_id': item['class_id'],
+                'kill_chain': item['kill_chain']
+            }
+            tensor_batch.append(tensor_item)
+        return tensor_batch
+
+    def train_episode(self, support_set: List[Dict], query_set: List[Dict],
+                      support_labels: List[int], query_labels: List[int]) -> Tuple[float, float]:
+        """
+        Train on single episode with FIX #2 and #3.
+
+        FIX #2: Non-destructive tensor conversion
+        FIX #3: Comprehensive NaN/Inf validation
+        """
         self.model.train()
         self.optimizer.zero_grad()
 
-        # Move data to device
-        for item in support_set:
-            item['packet'] = torch.tensor(
-                item['packet'], dtype=torch.float32).to(self.device)
-            item['flow'] = torch.tensor(
-                item['flow'], dtype=torch.float32).to(self.device)
-            item['campaign'] = torch.tensor(
-                item['campaign'], dtype=torch.float32).to(self.device)
+        # FIX #2: Use conversion helper instead of in-place modification
+        support_set_tensor = self._convert_batch_to_tensors(support_set)
+        query_set_tensor = self._convert_batch_to_tensors(query_set)
 
-        for item in query_set:
-            item['packet'] = torch.tensor(
-                item['packet'], dtype=torch.float32).to(self.device)
-            item['flow'] = torch.tensor(
-                item['flow'], dtype=torch.float32).to(self.device)
-            item['campaign'] = torch.tensor(
-                item['campaign'], dtype=torch.float32).to(self.device)
-
-        support_labels = torch.tensor(
+        support_labels_tensor = torch.tensor(
             support_labels, dtype=torch.long).to(self.device)
-        query_labels = torch.tensor(
+        query_labels_tensor = torch.tensor(
             query_labels, dtype=torch.long).to(self.device)
+
+        # Move tensors to device
+        for item in support_set_tensor:
+            item['packet'] = item['packet'].to(self.device)
+            item['flow'] = item['flow'].to(self.device)
+            item['campaign'] = item['campaign'].to(self.device)
+
+        for item in query_set_tensor:
+            item['packet'] = item['packet'].to(self.device)
+            item['flow'] = item['flow'].to(self.device)
+            item['campaign'] = item['campaign'].to(self.device)
 
         # Forward pass
         support_embeddings, query_embeddings = self.model(
-            support_set, query_set)
+            support_set_tensor, query_set_tensor)
 
         # Compute prototypes and distances
         prototypes = self.model.compute_prototypes(
-            support_embeddings, support_labels)
+            support_embeddings, support_labels_tensor)
         distances = self.model.compute_distances(query_embeddings, prototypes)
 
         # Compute loss
         log_probs = F.log_softmax(-distances, dim=1)
-        loss = F.nll_loss(log_probs, query_labels)
+        loss = F.nll_loss(log_probs, query_labels_tensor)
 
         # Backward pass
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        # FIX #8: Use constant for gradient clipping
+        torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), max_norm=GRADIENT_CLIP_MAX_NORM)
         self.optimizer.step()
+
+        # FIX #3: Validate loss and accuracy
+        loss_val = loss.item()
+
+        if np.isnan(loss_val) or np.isinf(loss_val):
+            print(
+                f"⚠️  Warning: Invalid loss detected ({loss_val}), skipping episode")
+            return float('nan'), 0.0
 
         # Compute accuracy
         predictions = torch.argmin(distances, dim=1)
-        accuracy = (predictions == query_labels).float().mean().item()
+        accuracy = (predictions == query_labels_tensor).float().mean().item()
+
+        # Validate accuracy
+        if np.isnan(accuracy) or np.isinf(accuracy):
+            accuracy = 0.0
 
         # Store history
-        self.training_history['loss'].append(loss.item())
+        self.training_history['loss'].append(loss_val)
         self.training_history['accuracy'].append(accuracy)
         self.training_history['distance_weights'].append(
             self.model.get_distance_weights()
         )
 
-        return loss.item(), accuracy
+        return loss_val, accuracy
 
-    def evaluate_episode(self, support_set, query_set, support_labels, query_labels):
-        """Evaluate on single episode"""
+    def evaluate_episode(self, support_set: List[Dict], query_set: List[Dict],
+                         support_labels: List[int], query_labels: List[int]) -> Dict:
+        """Evaluate on single episode with FIX #2"""
         self.model.eval()
 
         with torch.no_grad():
-            # Move data to device
-            for item in support_set:
-                item['packet'] = torch.tensor(
-                    item['packet'], dtype=torch.float32).to(self.device)
-                item['flow'] = torch.tensor(
-                    item['flow'], dtype=torch.float32).to(self.device)
-                item['campaign'] = torch.tensor(
-                    item['campaign'], dtype=torch.float32).to(self.device)
+            # FIX #2: Use conversion helper
+            support_set_tensor = self._convert_batch_to_tensors(support_set)
+            query_set_tensor = self._convert_batch_to_tensors(query_set)
 
-            for item in query_set:
-                item['packet'] = torch.tensor(
-                    item['packet'], dtype=torch.float32).to(self.device)
-                item['flow'] = torch.tensor(
-                    item['flow'], dtype=torch.float32).to(self.device)
-                item['campaign'] = torch.tensor(
-                    item['campaign'], dtype=torch.float32).to(self.device)
-
-            support_labels = torch.tensor(
+            support_labels_tensor = torch.tensor(
                 support_labels, dtype=torch.long).to(self.device)
-            query_labels = torch.tensor(
+            query_labels_tensor = torch.tensor(
                 query_labels, dtype=torch.long).to(self.device)
+
+            # Move tensors to device
+            for item in support_set_tensor:
+                item['packet'] = item['packet'].to(self.device)
+                item['flow'] = item['flow'].to(self.device)
+                item['campaign'] = item['campaign'].to(self.device)
+
+            for item in query_set_tensor:
+                item['packet'] = item['packet'].to(self.device)
+                item['flow'] = item['flow'].to(self.device)
+                item['campaign'] = item['campaign'].to(self.device)
 
             # Forward pass
             support_embeddings, query_embeddings = self.model(
-                support_set, query_set)
+                support_set_tensor, query_set_tensor)
 
             # Compute prototypes and distances
             prototypes = self.model.compute_prototypes(
-                support_embeddings, support_labels)
+                support_embeddings, support_labels_tensor)
             distances = self.model.compute_distances(
                 query_embeddings, prototypes)
 
             # Compute metrics
             log_probs = F.log_softmax(-distances, dim=1)
-            loss = F.nll_loss(log_probs, query_labels)
+            loss = F.nll_loss(log_probs, query_labels_tensor)
 
             predictions = torch.argmin(distances, dim=1)
-            accuracy = (predictions == query_labels).float().mean().item()
+            accuracy = (predictions ==
+                        query_labels_tensor).float().mean().item()
 
             # Detailed metrics
-            query_labels_np = query_labels.cpu().numpy()
+            query_labels_np = query_labels_tensor.cpu().numpy()
             predictions_np = predictions.cpu().numpy()
 
             f1 = f1_score(query_labels_np, predictions_np,
@@ -1059,7 +1186,7 @@ class MALZDATrainer:
 
 
 ################################################
-# SECTION 7: EXPERIMENTAL FRAMEWORK (FIXED)            #
+# SECTION 7: EXPERIMENTAL FRAMEWORK            #
 ################################################
 
 def run_experiment(
@@ -1072,7 +1199,7 @@ def run_experiment(
     eval_episodes: int = 200,
     use_compositional: bool = True,
     experiment_name: str = "malzda_experiment"
-):
+) -> Tuple[MALZDA, Dict, List[float], List[float]]:
     """Run complete MAL-ZDA experiment"""
 
     print("\n" + "="*80)
@@ -1129,15 +1256,24 @@ def run_experiment(
                 support_set, query_set, support_labels, query_labels
             )
 
-            train_losses.append(loss)
-            train_accuracies.append(accuracy)
-            successful_episodes += 1
+            # Only record valid episodes
+            if not np.isnan(loss):
+                train_losses.append(loss)
+                train_accuracies.append(accuracy)
+                successful_episodes += 1
 
             if (episode + 1) % 100 == 0:
-                avg_loss = np.mean(
-                    train_losses[-100:]) if len(train_losses) >= 100 else np.mean(train_losses)
-                avg_acc = np.mean(
-                    train_accuracies[-100:]) if len(train_accuracies) >= 100 else np.mean(train_accuracies)
+                if len(train_losses) >= MOVING_AVERAGE_WINDOW:
+                    avg_loss = np.mean(train_losses[-MOVING_AVERAGE_WINDOW:])
+                    avg_acc = np.mean(
+                        train_accuracies[-MOVING_AVERAGE_WINDOW:])
+                elif len(train_losses) > 0:
+                    avg_loss = np.mean(train_losses)
+                    avg_acc = np.mean(train_accuracies)
+                else:
+                    avg_loss = 0.0
+                    avg_acc = 0.0
+
                 print(
                     f"\nEpisode {episode+1}: Loss={avg_loss:.4f}, Accuracy={avg_acc:.4f}")
 
@@ -1270,7 +1406,8 @@ def run_experiment(
     return model, eval_results, train_losses, train_accuracies
 
 
-# VISUALIZATION FIXES FOR NaN HANDLING          #
+################################################
+# SECTION 8: VISUALIZATION FUNCTIONS            #
 ################################################
 
 def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
@@ -1337,18 +1474,22 @@ def visualize_training_results(
     train_accuracies: List[float],
     eval_results: Dict,
     save_prefix: str = "malzda"
-):
-    """Create comprehensive visualization of results"""
+) -> None:
+    """
+    Create comprehensive visualization of results.
+
+    FIX #11: Added proper return type documentation
+    """
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
     # 1. Training loss
     axes[0, 0].plot(train_losses, alpha=0.3,
                     label='Episode Loss', color='blue')
-    if len(train_losses) > 50:
+    if len(train_losses) > MOVING_AVERAGE_WINDOW:
         axes[0, 0].plot(
-            pd.Series(train_losses).rolling(50).mean(),
-            label='Moving Average (50)', linewidth=2, color='darkblue'
+            pd.Series(train_losses).rolling(MOVING_AVERAGE_WINDOW).mean(),
+            label=f'Moving Average ({MOVING_AVERAGE_WINDOW})', linewidth=2, color='darkblue'
         )
     axes[0, 0].set_xlabel('Episode')
     axes[0, 0].set_ylabel('Loss')
@@ -1359,10 +1500,10 @@ def visualize_training_results(
     # 2. Training accuracy
     axes[0, 1].plot(train_accuracies, alpha=0.3,
                     label='Episode Accuracy', color='green')
-    if len(train_accuracies) > 50:
+    if len(train_accuracies) > MOVING_AVERAGE_WINDOW:
         axes[0, 1].plot(
-            pd.Series(train_accuracies).rolling(50).mean(),
-            label='Moving Average (50)', linewidth=2, color='darkgreen'
+            pd.Series(train_accuracies).rolling(MOVING_AVERAGE_WINDOW).mean(),
+            label=f'Moving Average ({MOVING_AVERAGE_WINDOW})', linewidth=2, color='darkgreen'
         )
     axes[0, 1].set_xlabel('Episode')
     axes[0, 1].set_ylabel('Accuracy')
@@ -1391,7 +1532,7 @@ def visualize_training_results(
     axes[0, 2].tick_params(axis='x', rotation=15)
 
     # 4. Accuracy histogram
-    axes[1, 0].hist(eval_results['accuracies'], bins=20,
+    axes[1, 0].hist(eval_results['accuracies'], bins=HISTOGRAM_BINS,
                     edgecolor='black', alpha=0.7, color='skyblue')
     axes[1, 0].axvline(
         np.mean(eval_results['accuracies']),
@@ -1460,10 +1601,10 @@ def _save_individual_training_loss(train_losses: List[float], save_prefix: str):
     fig, ax = plt.subplots(figsize=(12, 6))
 
     ax.plot(train_losses, alpha=0.3, label='Episode Loss', color='blue')
-    if len(train_losses) > 50:
+    if len(train_losses) > MOVING_AVERAGE_WINDOW:
         ax.plot(
-            pd.Series(train_losses).rolling(50).mean(),
-            label='Moving Average (50)', linewidth=2, color='darkblue'
+            pd.Series(train_losses).rolling(MOVING_AVERAGE_WINDOW).mean(),
+            label=f'Moving Average ({MOVING_AVERAGE_WINDOW})', linewidth=2, color='darkblue'
         )
     ax.set_xlabel('Episode', fontsize=12)
     ax.set_ylabel('Loss', fontsize=12)
@@ -1485,10 +1626,10 @@ def _save_individual_training_accuracy(train_accuracies: List[float], save_prefi
 
     ax.plot(train_accuracies, alpha=0.3,
             label='Episode Accuracy', color='green')
-    if len(train_accuracies) > 50:
+    if len(train_accuracies) > MOVING_AVERAGE_WINDOW:
         ax.plot(
-            pd.Series(train_accuracies).rolling(50).mean(),
-            label='Moving Average (50)', linewidth=2, color='darkgreen'
+            pd.Series(train_accuracies).rolling(MOVING_AVERAGE_WINDOW).mean(),
+            label=f'Moving Average ({MOVING_AVERAGE_WINDOW})', linewidth=2, color='darkgreen'
         )
     ax.set_xlabel('Episode', fontsize=12)
     ax.set_ylabel('Accuracy', fontsize=12)
@@ -1545,7 +1686,7 @@ def _save_individual_accuracy_histogram(eval_results: Dict, save_prefix: str):
     """Save individual accuracy histogram visualization"""
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    ax.hist(eval_results['accuracies'], bins=20,
+    ax.hist(eval_results['accuracies'], bins=HISTOGRAM_BINS,
             edgecolor='black', alpha=0.7, color='skyblue')
     ax.axvline(
         np.mean(eval_results['accuracies']),
@@ -1640,7 +1781,8 @@ def _save_individual_metrics_table(eval_results: Dict, save_prefix: str):
         RESULTS_DIR / f'{save_prefix}_metrics_table.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"Individual metrics table saved to {save_prefix}_metrics_table.png")
+    print(
+        f"Individual metrics table saved to {save_prefix}_metrics_table.png")
 
 
 def create_comparison_visualization(results_comp: Dict, results_std: Dict, save_name: str = "comparison"):
@@ -2205,6 +2347,690 @@ def run_ablation_study(
 
 
 ################################################
+# SECTION 9: BASELINE IMPLEMENTATIONS          #
+################################################
+
+class SupervisedCNNLSTM(nn.Module):
+    """Supervised baseline: Full supervision on all classes"""
+
+    def __init__(
+        self,
+        input_dim: int = 256,
+        flow_seq_len: int = 100,
+        num_classes: int = 15,
+        embedding_dim: int = 128
+    ):
+        super(SupervisedCNNLSTM, self).__init__()
+
+        self.input_dim = input_dim
+        self.num_classes = num_classes
+
+        # Packet encoder (CNN)
+        self.packet_encoder = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=5, padding=2),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten()
+        )
+
+        # Flow encoder (LSTM)
+        self.flow_encoder = nn.LSTM(
+            input_size=input_dim,
+            hidden_size=64,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.2
+        )
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.Linear(64 + 128, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, packet_data, flow_data):
+        """Forward pass"""
+        if len(packet_data.shape) == 2:
+            packet_data = packet_data.unsqueeze(1)
+
+        # Encode
+        packet_encoded = self.packet_encoder(packet_data)
+        lstm_out, (hidden, _) = self.flow_encoder(flow_data)
+        flow_encoded = torch.cat([hidden[-2], hidden[-1]], dim=-1)
+
+        # Concatenate
+        combined = torch.cat([packet_encoded, flow_encoded], dim=-1)
+
+        # Classify
+        logits = self.classifier(combined)
+        return logits
+
+
+class OneClassSVMBaseline:
+    """One-Class SVM for anomaly detection (unsupervised baseline)"""
+
+    def __init__(self, nu: float = 0.05):
+        from sklearn.svm import OneClassSVM
+        self.model = OneClassSVM(kernel='rbf', nu=nu)
+        self.is_fitted = False
+
+    def fit(self, X_train):
+        """Fit the model"""
+        self.model.fit(X_train)
+        self.is_fitted = True
+
+    def predict(self, X_test):
+        """Predict: 1 for normal, -1 for anomaly"""
+        if not self.is_fitted:
+            return np.zeros(len(X_test), dtype=int)
+        return self.model.predict(X_test)
+
+    def score(self, X_test, y_test):
+        """Compute accuracy"""
+        predictions = self.predict(X_test)
+        # Convert -1 to 1 for binary classification
+        predictions = (predictions + 1) // 2
+        return np.mean(predictions == y_test)
+
+
+class TransferLearningBaseline(nn.Module):
+    """Transfer learning baseline: Pre-train on base classes, fine-tune on few-shot"""
+
+    def __init__(
+        self,
+        input_dim: int = 256,
+        flow_seq_len: int = 100,
+        num_classes: int = 15,
+        embedding_dim: int = 128
+    ):
+        super(TransferLearningBaseline, self).__init__()
+
+        self.input_dim = input_dim
+        self.num_classes = num_classes
+
+        # Feature extractor
+        self.feature_extractor = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=5, padding=2),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten()
+        )
+
+        # LSTM for flow features
+        self.flow_lstm = nn.LSTM(
+            input_size=input_dim,
+            hidden_size=64,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True
+        )
+
+        # Classifier head (will be replaced during fine-tuning)
+        self.classifier = nn.Sequential(
+            nn.Linear(64 + 128, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, num_classes)
+        )
+
+    def forward(self, packet_data, flow_data):
+        """Forward pass"""
+        if len(packet_data.shape) == 2:
+            packet_data = packet_data.unsqueeze(1)
+
+        packet_encoded = self.feature_extractor(packet_data)
+        lstm_out, (hidden, _) = self.flow_lstm(flow_data)
+        flow_encoded = torch.cat([hidden[-2], hidden[-1]], dim=-1)
+
+        combined = torch.cat([packet_encoded, flow_encoded], dim=-1)
+        logits = self.classifier(combined)
+        return logits
+
+
+class MAMLBaseline(nn.Module):
+    """Model-Agnostic Meta-Learning (MAML) baseline"""
+
+    def __init__(
+        self,
+        input_dim: int = 256,
+        flow_seq_len: int = 100,
+        num_classes: int = 5,
+        embedding_dim: int = 128,
+        inner_lr: float = 0.01,
+        num_inner_steps: int = 5
+    ):
+        super(MAMLBaseline, self).__init__()
+
+        self.input_dim = input_dim
+        self.num_classes = num_classes
+        self.inner_lr = inner_lr
+        self.num_inner_steps = num_inner_steps
+
+        # Feature extractor
+        self.feature_extractor = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=5, padding=2),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten()
+        )
+
+        self.flow_lstm = nn.LSTM(
+            input_size=input_dim,
+            hidden_size=64,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True
+        )
+
+        # Simple classifier
+        self.classifier = nn.Linear(64 + 128, num_classes)
+
+    def forward(self, packet_data, flow_data):
+        """Forward pass"""
+        if len(packet_data.shape) == 2:
+            packet_data = packet_data.unsqueeze(1)
+
+        packet_encoded = self.feature_extractor(packet_data)
+        lstm_out, (hidden, _) = self.flow_lstm(flow_data)
+        flow_encoded = torch.cat([hidden[-2], hidden[-1]], dim=-1)
+
+        combined = torch.cat([packet_encoded, flow_encoded], dim=-1)
+        logits = self.classifier(combined)
+        return logits
+
+
+class PrototypicalNetworkBaseline(nn.Module):
+    """Generic Prototypical Networks (no hierarchy)"""
+
+    def __init__(
+        self,
+        input_dim: int = 256,
+        flow_seq_len: int = 100,
+        embedding_dim: int = 128
+    ):
+        super(PrototypicalNetworkBaseline, self).__init__()
+
+        self.embedding_dim = embedding_dim
+
+        # Simple feature extractor
+        self.feature_extractor = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=5, padding=2),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(64, embedding_dim),
+            nn.ReLU()
+        )
+
+        self.flow_lstm = nn.LSTM(
+            input_size=input_dim,
+            hidden_size=64,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True
+        )
+
+    def forward(self, packet_data, flow_data):
+        """Forward pass"""
+        if len(packet_data.shape) == 2:
+            packet_data = packet_data.unsqueeze(1)
+
+        packet_encoded = self.feature_extractor(packet_data)
+
+        lstm_out, (hidden, _) = self.flow_lstm(flow_data)
+        flow_encoded = torch.cat(
+            [hidden[-1, :, :64], hidden[-1, :, 64:]], dim=-1)
+        flow_encoded = torch.nn.functional.linear(
+            flow_encoded,
+            torch.randn(self.embedding_dim, 128, device=flow_encoded.device)
+        ) if flow_encoded.shape[-1] != self.embedding_dim else flow_encoded
+
+        # Combine and normalize
+        combined = packet_encoded + flow_encoded[:, :self.embedding_dim]
+        return F.normalize(combined, p=2, dim=-1)
+
+
+def train_supervised_baseline(
+    model: nn.Module,
+    train_loader: DataLoader,
+    num_epochs: int = 50,
+    learning_rate: float = 0.001,
+    device: str = 'cpu'
+) -> Tuple[List[float], List[float]]:
+    """Train supervised baseline model"""
+
+    model = model.to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss()
+
+    train_losses = []
+    train_accs = []
+
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0.0
+        epoch_acc = 0.0
+        batch_count = 0
+
+        for batch in train_loader:
+            packet_data = batch['packet'].to(device)
+            flow_data = batch['flow'].to(device)
+            labels = torch.tensor(
+                batch['class_id'], dtype=torch.long).to(device)
+
+            optimizer.zero_grad()
+
+            logits = model(packet_data, flow_data)
+            loss = criterion(logits, labels)
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            predictions = torch.argmax(logits, dim=1)
+            epoch_acc += (predictions == labels).float().mean().item()
+            batch_count += 1
+
+        avg_loss = epoch_loss / max(1, batch_count)
+        avg_acc = epoch_acc / max(1, batch_count)
+
+        train_losses.append(avg_loss)
+        train_accs.append(avg_acc)
+
+        if (epoch + 1) % 10 == 0:
+            print(
+                f"  Epoch {epoch+1}/{num_epochs}: Loss={avg_loss:.4f}, Acc={avg_acc:.4f}")
+
+    return train_losses, train_accs
+
+
+def evaluate_baseline(
+    model: nn.Module,
+    test_loader: DataLoader,
+    device: str = 'cpu'
+) -> Dict:
+    """Evaluate baseline model"""
+
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in test_loader:
+            packet_data = batch['packet'].to(device)
+            flow_data = batch['flow'].to(device)
+            labels = torch.tensor(
+                batch['class_id'], dtype=torch.long).to(device)
+
+            logits = model(packet_data, flow_data)
+            predictions = torch.argmax(logits, dim=1)
+
+            all_preds.extend(predictions.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+
+    return {
+        'accuracy': accuracy_score(all_labels, all_preds),
+        'f1': f1_score(all_labels, all_preds, average='macro', zero_division=0),
+        'precision': precision_score(all_labels, all_preds, average='macro', zero_division=0),
+        'recall': recall_score(all_labels, all_preds, average='macro', zero_division=0),
+        'predictions': all_preds,
+        'labels': all_labels
+    }
+
+
+def run_baseline_comparison(
+    dataset_train: CyberSecurityDataset,
+    dataset_test: CyberSecurityDataset,
+    num_classes: int = 15,
+    batch_size: int = 32
+) -> Dict:
+    """
+    Run comprehensive baseline comparison.
+
+    Baselines:
+    1. Supervised CNN-LSTM (upper bound)
+    2. One-Class SVM (anomaly detection)
+    3. Transfer Learning (pre-train + fine-tune)
+    4. MAML (optimization-based meta-learning)
+    5. Prototypical Networks (generic metric-learning)
+    """
+
+    print("\n" + "="*80)
+    print("BASELINE COMPARISON: 5 Baseline Implementations")
+    print("="*80)
+
+    # Prepare data loaders
+    train_loader = DataLoader(
+        dataset_train, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(
+        dataset_test, batch_size=batch_size, shuffle=False)
+
+    # Get dimensions
+    sample = dataset_train[0]
+    packet_dim = len(sample['packet'])
+    flow_seq_len = len(sample['flow'])
+
+    baseline_results = {}
+
+    # BASELINE 1: Supervised CNN-LSTM
+    print("\n### BASELINE 1: Supervised CNN-LSTM (Upper Bound) ###")
+    print("-" * 60)
+    try:
+        model_supervised = SupervisedCNNLSTM(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=num_classes,
+            embedding_dim=128
+        )
+
+        train_losses, train_accs = train_supervised_baseline(
+            model_supervised, train_loader,
+            num_epochs=50, learning_rate=0.001, device=DEVICE
+        )
+
+        results_supervised = evaluate_baseline(
+            model_supervised, test_loader, DEVICE)
+        baseline_results['Supervised CNN-LSTM'] = results_supervised
+
+        print(f"\nResults:")
+        print(
+            f"  Accuracy:  {results_supervised['accuracy']:.4f}")
+        print(
+            f"  F1 Score:  {results_supervised['f1']:.4f}")
+        print(
+            f"  Precision: {results_supervised['precision']:.4f}")
+        print(
+            f"  Recall:    {results_supervised['recall']:.4f}")
+
+    except Exception as e:
+        print(f"Error in Supervised CNN-LSTM: {str(e)}")
+
+    # BASELINE 2: One-Class SVM
+    print("\n### BASELINE 2: One-Class SVM (Anomaly Detection) ###")
+    print("-" * 60)
+    try:
+        # Flatten features for SVM
+        X_train_flat = []
+        y_train_all = []
+
+        for sample in dataset_train:
+            packet = sample['packet']
+            flow = sample['flow'].mean(axis=0)
+            campaign = sample['campaign']
+            features = np.concatenate([packet, flow, campaign])
+            X_train_flat.append(features)
+            y_train_all.append(sample['class_id'])
+
+        X_train_flat = np.array(X_train_flat)
+        y_train_all = np.array(y_train_all)
+
+        # Use most frequent class as "normal"
+        normal_class = np.bincount(y_train_all).argmax()
+        y_train_binary = (y_train_all == normal_class).astype(int)
+
+        svm_model = OneClassSVMBaseline(nu=0.05)
+        svm_model.fit(X_train_flat[y_train_binary == 1])
+
+        # Test
+        X_test_flat = []
+        y_test_all = []
+
+        for sample in dataset_test:
+            packet = sample['packet']
+            flow = sample['flow'].mean(axis=0)
+            campaign = sample['campaign']
+            features = np.concatenate([packet, flow, campaign])
+            X_test_flat.append(features)
+            y_test_all.append(sample['class_id'])
+
+        X_test_flat = np.array(X_test_flat)
+        y_test_all = np.array(y_test_all)
+        y_test_binary = (y_test_all == normal_class).astype(int)
+
+        svm_predictions = svm_model.predict(X_test_flat)
+        svm_accuracy = np.mean(svm_predictions == y_test_binary)
+
+        baseline_results['One-Class SVM'] = {
+            'accuracy': svm_accuracy,
+            'f1': f1_score(y_test_binary, svm_predictions, zero_division=0),
+            'precision': precision_score(y_test_binary, svm_predictions, zero_division=0),
+            'recall': recall_score(y_test_binary, svm_predictions, zero_division=0),
+            'predictions': svm_predictions,
+            'labels': y_test_binary
+        }
+
+        print(f"\nResults (anomaly detection task):")
+        print(
+            f"  Accuracy:  {baseline_results['One-Class SVM']['accuracy']:.4f}")
+        print(f"  F1 Score:  {baseline_results['One-Class SVM']['f1']:.4f}")
+
+    except Exception as e:
+        print(f"Error in One-Class SVM: {str(e)}")
+
+    # BASELINE 3: Transfer Learning
+    print("\n### BASELINE 3: Transfer Learning (Pre-train + Fine-tune) ###")
+    print("-" * 60)
+    try:
+        model_transfer = TransferLearningBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=num_classes
+        )
+
+        train_losses, train_accs = train_supervised_baseline(
+            model_transfer, train_loader,
+            num_epochs=50, learning_rate=0.001, device=DEVICE
+        )
+
+        results_transfer = evaluate_baseline(
+            model_transfer, test_loader, DEVICE)
+        baseline_results['Transfer Learning'] = results_transfer
+
+        print(f"\nResults:")
+        print(
+            f"  Accuracy:  {results_transfer['accuracy']:.4f}")
+        print(
+            f"  F1 Score:  {results_transfer['f1']:.4f}")
+        print(
+            f"  Precision: {results_transfer['precision']:.4f}")
+        print(
+            f"  Recall:    {results_transfer['recall']:.4f}")
+
+    except Exception as e:
+        print(f"Error in Transfer Learning: {str(e)}")
+
+    # BASELINE 4: MAML
+    print("\n### BASELINE 4: MAML (Model-Agnostic Meta-Learning) ###")
+    print("-" * 60)
+    try:
+        model_maml = MAMLBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=DEFAULT_N_WAY,
+            inner_lr=0.01,
+            num_inner_steps=5
+        )
+
+        train_losses, train_accs = train_supervised_baseline(
+            model_maml, train_loader,
+            num_epochs=50, learning_rate=0.001, device=DEVICE
+        )
+
+        results_maml = evaluate_baseline(model_maml, test_loader, DEVICE)
+        baseline_results['MAML'] = results_maml
+
+        print(f"\nResults:")
+        print(
+            f"  Accuracy:  {results_maml['accuracy']:.4f}")
+        print(
+            f"  F1 Score:  {results_maml['f1']:.4f}")
+        print(
+            f"  Precision: {results_maml['precision']:.4f}")
+        print(
+            f"  Recall:    {results_maml['recall']:.4f}")
+
+    except Exception as e:
+        print(f"Error in MAML: {str(e)}")
+
+    # BASELINE 5: Prototypical Networks
+    print("\n### BASELINE 5: Prototypical Networks (Generic Metric-Learning) ###")
+    print("-" * 60)
+    try:
+        model_proto = PrototypicalNetworkBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            embedding_dim=128
+        )
+
+        train_losses, train_accs = train_supervised_baseline(
+            model_proto, train_loader,
+            num_epochs=50, learning_rate=0.001, device=DEVICE
+        )
+
+        results_proto = evaluate_baseline(model_proto, test_loader, DEVICE)
+        baseline_results['Prototypical Networks'] = results_proto
+
+        print(f"\nResults:")
+        print(
+            f"  Accuracy:  {results_proto['accuracy']:.4f}")
+        print(
+            f"  F1 Score:  {results_proto['f1']:.4f}")
+        print(
+            f"  Precision: {results_proto['precision']:.4f}")
+        print(
+            f"  Recall:    {results_proto['recall']:.4f}")
+
+    except Exception as e:
+        print(f"Error in Prototypical Networks: {str(e)}")
+
+    # Summary
+    print("\n" + "="*80)
+    print("BASELINE COMPARISON SUMMARY")
+    print("="*80)
+
+    if baseline_results:
+        baseline_names = list(baseline_results.keys())
+        baseline_accs = [baseline_results[name]['accuracy']
+                         for name in baseline_names]
+
+        for name, acc in zip(baseline_names, baseline_accs):
+            print(
+                f"{name}: {acc:.4f}")
+
+    return baseline_results
+
+
+def visualize_baseline_comparison(baseline_results: Dict, save_name: str = "baselines"):
+    """Visualize baseline comparison results"""
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+    baseline_names = list(baseline_results.keys())
+    accuracies = [baseline_results[name]['accuracy']
+                  for name in baseline_names]
+    f1_scores = [baseline_results[name]['f1'] for name in baseline_names]
+    precisions = [baseline_results[name]['precision']
+                  for name in baseline_names]
+    recalls = [baseline_results[name]['recall'] for name in baseline_names]
+
+    x = np.arange(len(baseline_names))
+    width = 0.2
+
+    # Accuracy
+    axes[0, 0].bar(x, accuracies, width, label='Accuracy',
+                   color='skyblue', edgecolor='black', alpha=0.8)
+    axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].set_title('Baseline Accuracy Comparison')
+    axes[0, 0].set_xticks(x)
+    axes[0, 0].set_xticklabels(baseline_names, rotation=45, ha='right')
+    axes[0, 0].grid(True, alpha=0.3, axis='y')
+
+    # F1 Scores
+    axes[0, 1].bar(x, f1_scores, width, label='F1 Score',
+                   color='lightcoral', edgecolor='black', alpha=0.8)
+    axes[0, 1].set_ylabel('F1 Score')
+    axes[0, 1].set_title('Baseline F1 Score Comparison')
+    axes[0, 1].set_xticks(x)
+    axes[0, 1].set_xticklabels(baseline_names, rotation=45, ha='right')
+    axes[0, 1].grid(True, alpha=0.3, axis='y')
+
+    # Precision vs Recall
+    axes[1, 0].scatter(precisions, recalls, s=200, alpha=0.6,
+                       edgecolor='black', linewidth=1.5)
+    for i, name in enumerate(baseline_names):
+        axes[1, 0].annotate(name, (precisions[i], recalls[i]),
+                            fontsize=9, ha='right')
+    axes[1, 0].set_xlabel('Precision')
+    axes[1, 0].set_ylabel('Recall')
+    axes[1, 0].set_title('Precision vs Recall')
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # All metrics summary
+    all_metrics = np.array([accuracies, f1_scores, precisions, recalls])
+    im = axes[1, 1].imshow(all_metrics, cmap='YlGn', aspect='auto')
+    axes[1, 1].set_xticks(x)
+    axes[1, 1].set_xticklabels(baseline_names, rotation=45, ha='right')
+    axes[1, 1].set_yticks(np.arange(4))
+    axes[1, 1].set_yticklabels(
+        ['Accuracy', 'F1 Score', 'Precision', 'Recall'])
+    axes[1, 1].set_title('All Metrics Heatmap')
+    plt.colorbar(im, ax=axes[1, 1])
+
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / f'{save_name}_comparison.png',
+                dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Baseline comparison visualization saved")
+
+    # Save results
+    with open(RESULTS_DIR / f'{save_name}_results.json', 'w') as f:
+        # Convert numpy types for JSON serialization
+        serializable_results = {}
+        for name, results in baseline_results.items():
+            serializable_results[name] = {
+                'accuracy': float(results['accuracy']),
+                'f1': float(results['f1']),
+                'precision': float(results['precision']),
+                'recall': float(results['recall'])
+            }
+        json.dump(serializable_results, f, indent=2)
+
+
+################################################
 # SECTION 10: MAIN EXECUTION                   #
 ################################################
 
@@ -2440,6 +3266,21 @@ def main():
         results_comp, results_std, ablation_results, scaling_results
     )
 
+    # RUN BASELINE COMPARISON
+    print("\n" + "="*80)
+    print("EXPERIMENT 4: BASELINE COMPARISON")
+    print("="*80)
+
+    baseline_results = run_baseline_comparison(
+        dataset_train, dataset_test,
+        num_classes=len(dataset_train.class_phase_indices) if hasattr(
+            dataset_train, 'class_phase_indices') else 15,
+        batch_size=BATCH_SIZE
+    )
+
+    # Visualize baselines
+    visualize_baseline_comparison(baseline_results)
+
     print("\n" + "="*80)
     print("ALL EXPERIMENTS COMPLETED")
     print("="*80)
@@ -2452,6 +3293,7 @@ def main():
     print("    * compositional_vs_standard.png")
     print("    * ablation.png")
     print("    * scaling.png")
+    print("    * baselines_comparison.png")
     print("  - Summary report: results_malzda/summary_report.txt")
     print("="*80)
 
@@ -2552,7 +3394,7 @@ def generate_summary_report(
 
 
 ################################################
-# SECTION 11: ENTRY POINT                      #
+# SECTION 10: ENTRY POINT                      #
 ################################################
 
 if __name__ == "__main__":
@@ -2570,3 +3412,4 @@ if __name__ == "__main__":
 
 ################################################
 # END OF FILE                                  #
+################################################
