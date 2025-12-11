@@ -1,10 +1,5 @@
 import os
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
 
 # ==========================================================
 #  1. CONFIGURATION
@@ -64,9 +59,15 @@ for file in all_files:
     print("➡ Merging:", file)
 
     try:
-        df_list.append(pd.read_csv(path))
+        # Use low_memory=False to avoid dtype inference issues
+        df = pd.read_csv(path, low_memory=False)
+        df_list.append(df)
+        print(f"   ✔ Loaded {len(df)} rows")
     except Exception as e:
-        print("❌ Error reading", file, ":", e)
+        print("❌ Error reading", file, ":", str(e)[:100])
+
+if not df_list:
+    raise RuntimeError("❌ No CSV files could be successfully read.")
 
 data = pd.concat(df_list, ignore_index=True)
 print("✔ Merge complete. Shape:", data.shape)
@@ -89,12 +90,20 @@ possible_labels = [
 
 label_col = None
 for col in data.columns:
+    # Check exact match first
     if col in possible_labels:
+        label_col = col
+        break
+    # Check case-insensitive match
+    if col.strip().lower() in [l.lower() for l in possible_labels]:
         label_col = col
         break
 
 if label_col is None:
-    raise ValueError("❌ No valid label column found in dataset.")
+    # If still not found, print available columns for debugging
+    print("❌ No valid label column found in dataset.")
+    print("Available columns:", list(data.columns))
+    raise ValueError("Please ensure a label/class column exists in the dataset.")
 
 print(f"✔ Label column detected: {label_col}")
 
@@ -128,45 +137,4 @@ data.to_csv(clean_output_path, index=False)
 print(f"📁 Cleaned merged CSV saved to:\n{clean_output_path}")
 print("✔ Cleaned dataset shape:", data.shape)
 
-# ==========================================================
-#  8. PREPARE FEATURES
-# ==========================================================
-X = data.drop(columns=[label_col])
-y = data[label_col]
-
-encoder = LabelEncoder()
-y = encoder.fit_transform(y)
-
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y, test_size=0.20, random_state=42, stratify=y
-)
-
-# ==========================================================
-#  9. TRAIN MODEL
-# ==========================================================
-print("🚀 Training model...")
-
-model = RandomForestClassifier(
-    n_estimators=200,
-    max_depth=20,
-    random_state=42,
-    n_jobs=-1
-)
-model.fit(X_train, y_train)
-
-print("✔ Model training complete!")
-
-# ==========================================================
-#  10. EVALUATION
-# ==========================================================
-y_pred = model.predict(X_test)
-
-print("\n🎯 ACCURACY:", accuracy_score(y_test, y_pred))
-
-print("\n📘 CLASSIFICATION REPORT:\n")
-print(classification_report(y_test, y_pred, target_names=encoder.classes_))
-
-print("\n✅ SCRIPT FINISHED SUCCESSFULLY.")
+print("\n✅ MERGE AND SAVE COMPLETE.")
