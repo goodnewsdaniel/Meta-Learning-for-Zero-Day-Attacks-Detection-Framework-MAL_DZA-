@@ -4,9 +4,8 @@ import pandas as pd
 # ==========================================================
 #  1. CONFIGURATION
 # ==========================================================
-DATASET_FOLDER = r"./cicids2017_csvs/"   # <-- your input folder
-# DATASET_FOLDER = r"./unsw_nb15_csvs/"   # <-- your input folder
-# DATASET_FOLDER = r"./unsw_nb15_csvs/"   # <-- your input folder
+# DATASET_FOLDER = r"./cicids2017_csvs/"   # <-- your input folder
+DATASET_FOLDER = r"./unsw_nb15_csvs/"   # <-- your input folder
 OUTPUT_FOLDER = r"./processed/"  # <-- output folder to save merged CSV
 
 # Set True for binary classification (Benign vs Malicious)
