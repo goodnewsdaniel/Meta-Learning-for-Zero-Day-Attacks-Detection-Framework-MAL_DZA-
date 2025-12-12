@@ -1,12 +1,14 @@
 # Ignore dataset files
 dataset/
-dnsdos.csv
-dataset/dnsdos
 processed/
 cicids2017_csvs/
+unsw_nb15_csvs/
+dataset_bank/
+
 
 # Ignore results and model checkpoints
 results_malzda/
+results/
 *.pt
 *.png
 *.json

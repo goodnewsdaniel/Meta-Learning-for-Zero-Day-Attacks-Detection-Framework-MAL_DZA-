@@ -5,6 +5,8 @@ import pandas as pd
 #  1. CONFIGURATION
 # ==========================================================
 DATASET_FOLDER = r"./cicids2017_csvs/"   # <-- your input folder
+# DATASET_FOLDER = r"./unsw_nb15_csvs/"   # <-- your input folder
+# DATASET_FOLDER = r"./unsw_nb15_csvs/"   # <-- your input folder
 OUTPUT_FOLDER = r"./processed/"  # <-- output folder to save merged CSV
 
 # Set True for binary classification (Benign vs Malicious)
@@ -103,7 +105,8 @@ if label_col is None:
     # If still not found, print available columns for debugging
     print("❌ No valid label column found in dataset.")
     print("Available columns:", list(data.columns))
-    raise ValueError("Please ensure a label/class column exists in the dataset.")
+    raise ValueError(
+        "Please ensure a label/class column exists in the dataset.")
 
 print(f"✔ Label column detected: {label_col}")
 
