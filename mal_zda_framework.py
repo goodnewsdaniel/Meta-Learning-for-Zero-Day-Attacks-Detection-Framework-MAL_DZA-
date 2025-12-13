@@ -70,7 +70,7 @@ plt.rcParams.update({
 })
 
 # ============================================================================
-# SECTION 1.1: GLOBAL CONSTANTS (FIX #10: Organized magic numbers)
+# SECTION 1.1: GLOBAL CONSTANTS
 # ============================================================================
 
 # Random state for reproducibility
@@ -87,23 +87,22 @@ DEFAULT_K_SHOT = 1
 DEFAULT_N_QUERY = 15
 DEFAULT_EMBEDDING_DIM = 128
 
-# FIX #8: Explicit gradient clipping constant (documented)
 GRADIENT_CLIP_MAX_NORM = 1.0  # Prevents exploding gradients
 
-# Kill-chain phase probability distribution (FIX #10: Extracted to constant)
+# Kill-chain phase probability distribution
 KILL_CHAIN_PHASE_PROBS = [0.4, 0.2, 0.2, 0.1, 0.1]
 
-# Temporal sequence generation parameters (FIX #10: Extracted)
+# Temporal sequence generation parameters
 TEMPORAL_NOISE_SCALE = 0.05
 TEMPORAL_DYNAMICS_WEIGHT = 0.1
 
-# Feature spike generation (FIX #10: Extracted)
+# Feature spike generation
 SPIKE_DIVISOR = 5  # feature_dim // 5
 
-# Moving average window for visualization (FIX #10: Extracted)
+# Moving average window for visualization
 MOVING_AVERAGE_WINDOW = 50
 
-# Histogram bins for visualization (FIX #10: Extracted)
+# Histogram bins for visualization
 HISTOGRAM_BINS = 20
 
 # Set random seeds for reproducibility
@@ -307,7 +306,6 @@ class CyberSecurityDataset(Dataset):
     ):
         """Initialize dataset with either real or synthetic data."""
         self.mode = mode
-        # FIX #2: Ensure temporal_length is set before use
         self.temporal_length = temporal_length
         self.feature_dim = feature_dim
         self.kill_chain_phases = 5
@@ -331,7 +329,7 @@ class CyberSecurityDataset(Dataset):
         FIX #3: Ensure all attributes are properly initialized
         """
         self.feature_dim = X.shape[1]
-        # FIX #3: Initialize num_classes
+        # Initialize num_classes
         self.num_classes = len(np.unique(y))
 
         self.data = []
@@ -377,7 +375,7 @@ class CyberSecurityDataset(Dataset):
 
         FIX #1: Use instance attribute with safe default
         """
-        # FIX #1: Safe attribute access with default
+        # Safe attribute access with default
         temporal_length = getattr(self, 'temporal_length', 100)
         feature_len = len(features)
 
@@ -471,7 +469,7 @@ class CyberSecurityDataset(Dataset):
                                  samples_per_class: int) -> None:
         """Generate synthetic cyber security dataset"""
         self.data = []
-        self.num_classes = num_classes  # FIX #3: Initialize num_classes
+        self.num_classes = num_classes  # Initialize num_classes
 
         for class_id in range(num_classes):
             # Class-specific base pattern
@@ -674,7 +672,7 @@ class MALZDA(nn.Module):
         flow_data = torch.stack([item['flow'] for item in batch_data])
         campaign_data = torch.stack([item['campaign'] for item in batch_data])
 
-        # FIX #4: Move tensors to model's device
+        # Move tensors to model's device
         device = next(self.parameters()).device
         packet_data = packet_data.to(device)
         flow_data = flow_data.to(device)
@@ -710,7 +708,7 @@ class MALZDA(nn.Module):
         distances = torch.zeros(batch_size, num_classes,
                                 device=query_embeddings[0].device)
 
-        # FIX #7: Improved weight validation - ensure all weights are positive
+        # Improved weight validation - ensure all weights are positive
         alpha, beta, gamma, temperature = self.get_positive_weights()
 
         # Get ordered class IDs for consistent indexing
@@ -763,7 +761,7 @@ class MALZDA(nn.Module):
 
 
 ################################################
-# SECTION 5: COMPOSITIONAL TASK SAMPLING (FIXED)       #
+# SECTION 5: COMPOSITIONAL TASK SAMPLING     #
 ################################################
 
 class CompositionalTaskSampler:
@@ -905,7 +903,7 @@ class CompositionalTaskSampler:
         support_labels = []
         query_labels = []
 
-        # FIX #1: Clear and straightforward query label assembly
+        # Clear and straightforward query label assembly
         for class_idx, class_id in enumerate(selected_classes):
             all_indices = []
             for phase in self.class_phase_indices[class_id]:
@@ -978,7 +976,7 @@ class CompositionalTaskSampler:
 
 
 ################################################
-# SECTION 6: TRAINING AND EVALUATION (FIXED)   #
+# SECTION 6: TRAINING AND EVALUATION          #
 ################################################
 
 class MALZDATrainer:
@@ -1036,7 +1034,7 @@ class MALZDATrainer:
         self.model.train()
         self.optimizer.zero_grad()
 
-        # FIX #2: Use conversion helper instead of in-place modification
+        # Use conversion helper instead of in-place modification
         support_set_tensor = self._convert_batch_to_tensors(support_set)
         query_set_tensor = self._convert_batch_to_tensors(query_set)
 
@@ -1071,12 +1069,12 @@ class MALZDATrainer:
 
         # Backward pass
         loss.backward()
-        # FIX #8: Use constant for gradient clipping
+        # Use constant for gradient clipping
         torch.nn.utils.clip_grad_norm_(
             self.model.parameters(), max_norm=GRADIENT_CLIP_MAX_NORM)
         self.optimizer.step()
 
-        # FIX #3: Validate loss and accuracy
+        # Validate loss and accuracy
         loss_val = loss.item()
 
         if np.isnan(loss_val) or np.isinf(loss_val):
@@ -1107,7 +1105,7 @@ class MALZDATrainer:
         self.model.eval()
 
         with torch.no_grad():
-            # FIX #2: Use conversion helper
+            # Use conversion helper
             support_set_tensor = self._convert_batch_to_tensors(support_set)
             query_set_tensor = self._convert_batch_to_tensors(query_set)
 
@@ -1478,7 +1476,7 @@ def visualize_training_results(
     """
     Create comprehensive visualization of results.
 
-    FIX #11: Added proper return type documentation
+    Added proper return type documentation
     """
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
