@@ -21,7 +21,7 @@ import json
 import time
 import warnings
 from pathlib import Path
-from typing import Tuple, List, Dict, Optional, Union
+from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 
 # Numerical computing
@@ -86,7 +86,8 @@ DEFAULT_N_WAY = 5
 DEFAULT_K_SHOT = 1
 DEFAULT_N_QUERY = 15
 DEFAULT_EMBEDDING_DIM = 128
-
+MOVING_AVERAGE_WINDOW = 50
+HISTOGRAM_BINS = 30
 GRADIENT_CLIP_MAX_NORM = 1.0  # Prevents exploding gradients
 
 # Kill-chain phase probability distribution
@@ -99,11 +100,9 @@ TEMPORAL_DYNAMICS_WEIGHT = 0.1
 # Feature spike generation
 SPIKE_DIVISOR = 5  # feature_dim // 5
 
-# Moving average window for visualization
+# Visualization parameters
 MOVING_AVERAGE_WINDOW = 50
-
-# Histogram bins for visualization
-HISTOGRAM_BINS = 20
+HISTOGRAM_BINS = 30
 
 # Set random seeds for reproducibility
 torch.manual_seed(RANDOM_STATE)
@@ -979,6 +978,25 @@ class CompositionalTaskSampler:
 # SECTION 6: TRAINING AND EVALUATION          #
 ################################################
 
+def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    """
+    Compute all classification metrics at once.
+
+    Args:
+        y_true: True class labels
+        y_pred: Predicted class labels
+
+    Returns:
+        Dictionary containing accuracy, f1, precision, and recall scores
+    """
+    return {
+        'accuracy': accuracy_score(y_true, y_pred),
+        'f1': f1_score(y_true, y_pred, average='macro', zero_division=0),
+        'precision': precision_score(y_true, y_pred, average='macro', zero_division=0),
+        'recall': recall_score(y_true, y_pred, average='macro', zero_division=0)
+    }
+
+
 class MALZDATrainer:
     """Training and evaluation framework with safety checks"""
 
@@ -1408,7 +1426,7 @@ def run_experiment(
 # SECTION 8: VISUALIZATION FUNCTIONS            #
 ################################################
 
-def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
+def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str) -> None:
     """Save individual scaling all metrics chart with NaN safety"""
     fig, ax = plt.subplots(figsize=(13, 7))
 
@@ -1472,11 +1490,18 @@ def visualize_training_results(
     train_accuracies: List[float],
     eval_results: Dict,
     save_prefix: str = "malzda"
-) -> None:
+) -> None:  # FIX #5: Add explicit return type
     """
     Create comprehensive visualization of results.
 
-    Added proper return type documentation
+    Args:
+        train_losses: Training loss values per episode
+        train_accuracies: Training accuracy values per episode
+        eval_results: Dictionary containing evaluation metrics
+        save_prefix: Prefix for saved visualization files
+
+    Returns:
+        None
     """
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -1594,7 +1619,7 @@ def visualize_training_results(
     _save_individual_metrics_table(eval_results, save_prefix)
 
 
-def _save_individual_training_loss(train_losses: List[float], save_prefix: str):
+def _save_individual_training_loss(train_losses: List[float], save_prefix: str) -> None:
     """Save individual training loss visualization"""
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -1618,7 +1643,7 @@ def _save_individual_training_loss(train_losses: List[float], save_prefix: str):
     print(f"Individual training loss saved to {save_prefix}_training_loss.png")
 
 
-def _save_individual_training_accuracy(train_accuracies: List[float], save_prefix: str):
+def _save_individual_training_accuracy(train_accuracies: List[float], save_prefix: str) -> None:
     """Save individual training accuracy visualization"""
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -1644,7 +1669,7 @@ def _save_individual_training_accuracy(train_accuracies: List[float], save_prefi
         f"Individual training accuracy saved to {save_prefix}_training_accuracy.png")
 
 
-def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str):
+def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str) -> None:
     """Save individual metrics boxplot visualization"""
     fig, ax = plt.subplots(figsize=(10, 7))
 
@@ -1680,7 +1705,7 @@ def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str):
         f"Individual metrics boxplot saved to {save_prefix}_metrics_boxplot.png")
 
 
-def _save_individual_accuracy_histogram(eval_results: Dict, save_prefix: str):
+def _save_individual_accuracy_histogram(eval_results: Dict, save_prefix: str) -> None:
     """Save individual accuracy histogram visualization"""
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -1711,7 +1736,7 @@ def _save_individual_accuracy_histogram(eval_results: Dict, save_prefix: str):
         f"Individual accuracy histogram saved to {save_prefix}_accuracy_histogram.png")
 
 
-def _save_individual_confusion_matrix(eval_results: Dict, save_prefix: str):
+def _save_individual_confusion_matrix(eval_results: Dict, save_prefix: str) -> None:
     """Save individual confusion matrix visualization"""
     if len(eval_results['all_predictions']) == 0:
         print(f"Skipping confusion matrix for {save_prefix} (no predictions)")
@@ -1746,7 +1771,7 @@ def _save_individual_confusion_matrix(eval_results: Dict, save_prefix: str):
         f"Individual confusion matrix saved to {save_prefix}_confusion_matrix.png")
 
 
-def _save_individual_metrics_table(eval_results: Dict, save_prefix: str):
+def _save_individual_metrics_table(eval_results: Dict, save_prefix: str) -> None:
     """Save individual metrics summary table visualization"""
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -1874,7 +1899,7 @@ def create_comparison_visualization(results_comp: Dict, results_std: Dict, save_
     _save_individual_metrics_bar_chart(results_comp, results_std, save_name)
 
 
-def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, save_name: str):
+def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, save_name: str) -> None:
     """Save individual accuracy comparison"""
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -1900,7 +1925,7 @@ def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, 
         f"Individual accuracy comparison saved to {save_name}_accuracy_comparison.png")
 
 
-def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_name: str):
+def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_name: str) -> None:
     """Save individual F1 score comparison"""
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -1925,7 +1950,7 @@ def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_n
     print(f"Individual F1 comparison saved to {save_name}_f1_comparison.png")
 
 
-def _save_individual_precision_recall_scatter(results_comp: Dict, results_std: Dict, save_name: str):
+def _save_individual_precision_recall_scatter(results_comp: Dict, results_std: Dict, save_name: str) -> None:
     """Save individual precision-recall scatter plot"""
     fig, ax = plt.subplots(figsize=(10, 8))
 
@@ -1952,7 +1977,7 @@ def _save_individual_precision_recall_scatter(results_comp: Dict, results_std: D
         f"Individual precision-recall scatter saved to {save_name}_precision_recall_scatter.png")
 
 
-def _save_individual_metrics_bar_chart(results_comp: Dict, results_std: Dict, save_name: str):
+def _save_individual_metrics_bar_chart(results_comp: Dict, results_std: Dict, save_name: str) -> None:
     """Save individual metrics bar chart comparison"""
     fig, ax = plt.subplots(figsize=(12, 7))
 
@@ -1989,7 +2014,7 @@ def _save_individual_metrics_bar_chart(results_comp: Dict, results_std: Dict, sa
     ax.set_title('All Metrics Comparison', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(metrics, rotation=15, ha='right')
-    ax.legend(fontsize=11)
+    ax.legend()
     ax.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
@@ -2049,7 +2074,7 @@ def visualize_ablation_results(ablation_results: Dict, save_name: str = "ablatio
     _save_individual_ablation_f1(ablation_results, save_name)
 
 
-def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str):
+def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str) -> None:
     """Save individual ablation accuracy chart"""
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -2083,7 +2108,7 @@ def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str):
     print(f"Individual ablation accuracy saved to {save_name}_accuracy.png")
 
 
-def _save_individual_ablation_f1(ablation_results: Dict, save_name: str):
+def _save_individual_ablation_f1(ablation_results: Dict, save_name: str) -> None:
     """Save individual ablation F1 score chart"""
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -2169,7 +2194,7 @@ def visualize_scaling_results(scaling_results: Dict, save_name: str = "scaling")
     _save_individual_scaling_all_metrics(scaling_results, save_name)
 
 
-def _save_individual_scaling_accuracy(scaling_results: Dict, save_name: str):
+def _save_individual_scaling_accuracy(scaling_results: Dict, save_name: str) -> None:
     """Save individual scaling accuracy chart"""
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -2197,65 +2222,6 @@ def _save_individual_scaling_accuracy(scaling_results: Dict, save_name: str):
 
     print(
         f"Individual scaling accuracy saved to {save_name}_accuracy_scaling.png")
-
-
-def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str):
-    """Save individual scaling all metrics chart with NaN safety"""
-    fig, ax = plt.subplots(figsize=(13, 7))
-
-    k_shots = list(scaling_results.keys())
-    accuracies = [scaling_results[k]['accuracy'] for k in k_shots]
-    f1_scores = [scaling_results[k]['f1'] for k in k_shots]
-    precisions = [scaling_results[k]['precision'] for k in k_shots]
-    recalls = [scaling_results[k]['recall'] for k in k_shots]
-
-    # Filter out NaN values
-    valid_mask = ~(np.isnan(accuracies) | np.isnan(f1_scores) |
-                   np.isnan(precisions) | np.isnan(recalls))
-
-    if not np.any(valid_mask):
-        print(f"⚠️  Warning: All metrics are NaN for {save_name}")
-        plt.close(fig)
-        return
-
-    k_shots_valid = [k for k, v in zip(k_shots, valid_mask) if v]
-    accuracies_valid = [acc for acc, v in zip(accuracies, valid_mask) if v]
-    f1_scores_valid = [f1 for f1, v in zip(f1_scores, valid_mask) if v]
-    precisions_valid = [prec for prec, v in zip(precisions, valid_mask) if v]
-    recalls_valid = [rec for rec, v in zip(recalls, valid_mask) if v]
-
-    ax.plot(k_shots_valid, accuracies_valid, marker='o', markersize=10,
-            linewidth=2.5, label='Accuracy', color='blue')
-    ax.plot(k_shots_valid, f1_scores_valid, marker='s', markersize=10,
-            linewidth=2.5, label='F1 Score', color='green')
-    ax.plot(k_shots_valid, precisions_valid, marker='^', markersize=10,
-            linewidth=2.5, label='Precision', color='red')
-    ax.plot(k_shots_valid, recalls_valid, marker='v', markersize=10,
-            linewidth=2.5, label='Recall', color='purple')
-
-    ax.set_xlabel('Number of Support Examples (k-shot)', fontsize=12)
-    ax.set_ylabel('Score', fontsize=12)
-    ax.set_title('All Metrics vs Support Set Size',
-                 fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=11, loc='best')
-    ax.set_xticks(k_shots_valid)
-
-    # Safe ylim setting
-    all_valid_values = accuracies_valid + \
-        f1_scores_valid + precisions_valid + recalls_valid
-    if all_valid_values:
-        y_min = max(0, min(all_valid_values) - 0.1)
-        y_max = min(1.0, max(all_valid_values) + 0.1)
-        ax.set_ylim([y_min, y_max])
-
-    plt.tight_layout()
-    plt.savefig(
-        RESULTS_DIR / f'{save_name}_all_metrics.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(
-        f"Individual scaling all metrics saved to {save_name}_all_metrics.png")
 
 
 def run_ablation_study(
@@ -2362,6 +2328,7 @@ class SupervisedCNNLSTM(nn.Module):
 
         self.input_dim = input_dim
         self.num_classes = num_classes
+        self.device = None  # FIX #6: Track device
 
         # Packet encoder (CNN)
         self.packet_encoder = nn.Sequential(
@@ -2401,9 +2368,13 @@ class SupervisedCNNLSTM(nn.Module):
         )
 
     def forward(self, packet_data, flow_data):
-        """Forward pass"""
-        if len(packet_data.shape) == 2:
-            packet_data = packet_data.unsqueeze(1)
+        """Forward pass with device consistency"""
+        # FIX #6: Store device on first forward pass
+        if self.device is None:
+            self.device = next(self.parameters()).device
+
+        packet_data = packet_data.to(self.device)
+        flow_data = flow_data.to(self.device)
 
         # Encode
         packet_encoded = self.packet_encoder(packet_data)
@@ -2539,7 +2510,7 @@ class MAMLBaseline(nn.Module):
         self.flow_lstm = nn.LSTM(
             input_size=input_dim,
             hidden_size=64,
-            num_layers=2,
+            num_layers=1,
             batch_first=True,
             bidirectional=True
         )
@@ -2615,6 +2586,57 @@ class PrototypicalNetworkBaseline(nn.Module):
         # Combine and normalize
         combined = packet_encoded + flow_encoded[:, :self.embedding_dim]
         return F.normalize(combined, p=2, dim=-1)
+
+
+def _create_baseline_model(
+    model_type: str,
+    packet_dim: int,
+    flow_seq_len: int,
+    num_classes: int,
+    embedding_dim: int = 128
+) -> nn.Module:
+    """
+    Factory function to create baseline models.
+
+    Args:
+        model_type: Type of baseline model ('supervised', 'transfer', 'maml', 'proto')
+        packet_dim: Dimension of packet features
+        flow_seq_len: Length of flow sequences
+        num_classes: Number of classes
+        embedding_dim: Embedding dimension
+
+    Returns:
+        Initialized baseline model
+    """
+    if model_type == 'supervised':
+        return SupervisedCNNLSTM(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=num_classes,
+            embedding_dim=embedding_dim
+        )
+    elif model_type == 'transfer':
+        return TransferLearningBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=num_classes,
+            embedding_dim=embedding_dim
+        )
+    elif model_type == 'maml':
+        return MAMLBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            num_classes=num_classes,
+            embedding_dim=embedding_dim
+        )
+    elif model_type == 'proto':
+        return PrototypicalNetworkBaseline(
+            input_dim=packet_dim,
+            flow_seq_len=flow_seq_len,
+            embedding_dim=embedding_dim
+        )
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
 
 
 def train_supervised_baseline(
@@ -2699,14 +2721,11 @@ def evaluate_baseline(
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
 
-    return {
-        'accuracy': accuracy_score(all_labels, all_preds),
-        'f1': f1_score(all_labels, all_preds, average='macro', zero_division=0),
-        'precision': precision_score(all_labels, all_preds, average='macro', zero_division=0),
-        'recall': recall_score(all_labels, all_preds, average='macro', zero_division=0),
-        'predictions': all_preds,
-        'labels': all_labels
-    }
+    metrics = compute_metrics(all_labels, all_preds)
+    metrics['predictions'] = all_preds
+    metrics['labels'] = all_labels
+
+    return metrics
 
 
 def run_baseline_comparison(
@@ -2715,20 +2734,7 @@ def run_baseline_comparison(
     num_classes: int = 15,
     batch_size: int = 32
 ) -> Dict:
-    """
-    Run comprehensive baseline comparison.
-
-    Baselines:
-    1. Supervised CNN-LSTM (upper bound)
-    2. One-Class SVM (anomaly detection)
-    3. Transfer Learning (pre-train + fine-tune)
-    4. MAML (optimization-based meta-learning)
-    5. Prototypical Networks (generic metric-learning)
-    """
-
-    print("\n" + "="*80)
-    print("BASELINE COMPARISON: 5 Baseline Implementations")
-    print("="*80)
+    """Run comprehensive baseline comparison with consolidated model creation"""
 
     # Prepare data loaders
     train_loader = DataLoader(
@@ -2736,545 +2742,44 @@ def run_baseline_comparison(
     test_loader = DataLoader(
         dataset_test, batch_size=batch_size, shuffle=False)
 
-    # Get dimensions
+    # Extract dimensions from dataset
     sample = dataset_train[0]
     packet_dim = len(sample['packet'])
     flow_seq_len = len(sample['flow'])
 
+    baseline_configs = [
+        {'type': 'supervised', 'name': 'Supervised CNN-LSTM'},
+        {'type': 'transfer', 'name': 'Transfer Learning'},
+        {'type': 'maml', 'name': 'MAML'},
+        {'type': 'proto', 'name': 'Prototypical Networks'}
+    ]
+
     baseline_results = {}
 
-    # BASELINE 1: Supervised CNN-LSTM
-    print("\n### BASELINE 1: Supervised CNN-LSTM (Upper Bound) ###")
-    print("-" * 60)
-    try:
-        model_supervised = SupervisedCNNLSTM(
-            input_dim=packet_dim,
-            flow_seq_len=flow_seq_len,
-            num_classes=num_classes,
-            embedding_dim=128
-        )
-
-        train_losses, train_accs = train_supervised_baseline(
-            model_supervised, train_loader,
-            num_epochs=50, learning_rate=0.001, device=DEVICE
-        )
-
-        results_supervised = evaluate_baseline(
-            model_supervised, test_loader, DEVICE)
-        baseline_results['Supervised CNN-LSTM'] = results_supervised
-
-        print(f"\nResults:")
-        print(
-            f"  Accuracy:  {results_supervised['accuracy']:.4f}")
-        print(
-            f"  F1 Score:  {results_supervised['f1']:.4f}")
-        print(
-            f"  Precision: {results_supervised['precision']:.4f}")
-        print(
-            f"  Recall:    {results_supervised['recall']:.4f}")
-
-    except Exception as e:
-        print(f"Error in Supervised CNN-LSTM: {str(e)}")
-
-    # BASELINE 2: One-Class SVM
-    print("\n### BASELINE 2: One-Class SVM (Anomaly Detection) ###")
-    print("-" * 60)
-    try:
-        # Flatten features for SVM
-        X_train_flat = []
-        y_train_all = []
-
-        for sample in dataset_train:
-            packet = sample['packet']
-            flow = sample['flow'].mean(axis=0)
-            campaign = sample['campaign']
-            features = np.concatenate([packet, flow, campaign])
-            X_train_flat.append(features)
-            y_train_all.append(sample['class_id'])
-
-        X_train_flat = np.array(X_train_flat)
-        y_train_all = np.array(y_train_all)
-
-        # Use most frequent class as "normal"
-        normal_class = np.bincount(y_train_all).argmax()
-        y_train_binary = (y_train_all == normal_class).astype(int)
-
-        svm_model = OneClassSVMBaseline(nu=0.05)
-        svm_model.fit(X_train_flat[y_train_binary == 1])
-
-        # Test
-        X_test_flat = []
-        y_test_all = []
-
-        for sample in dataset_test:
-            packet = sample['packet']
-            flow = sample['flow'].mean(axis=0)
-            campaign = sample['campaign']
-            features = np.concatenate([packet, flow, campaign])
-            X_test_flat.append(features)
-            y_test_all.append(sample['class_id'])
-
-        X_test_flat = np.array(X_test_flat)
-        y_test_all = np.array(y_test_all)
-        y_test_binary = (y_test_all == normal_class).astype(int)
-
-        svm_predictions = svm_model.predict(X_test_flat)
-        svm_accuracy = np.mean(svm_predictions == y_test_binary)
-
-        baseline_results['One-Class SVM'] = {
-            'accuracy': svm_accuracy,
-            'f1': f1_score(y_test_binary, svm_predictions, zero_division=0),
-            'precision': precision_score(y_test_binary, svm_predictions, zero_division=0),
-            'recall': recall_score(y_test_binary, svm_predictions, zero_division=0),
-            'predictions': svm_predictions,
-            'labels': y_test_binary
-        }
-
-        print(f"\nResults (anomaly detection task):")
-        print(
-            f"  Accuracy:  {baseline_results['One-Class SVM']['accuracy']:.4f}")
-        print(f"  F1 Score:  {baseline_results['One-Class SVM']['f1']:.4f}")
-
-    except Exception as e:
-        print(f"Error in One-Class SVM: {str(e)}")
-
-    # BASELINE 3: Transfer Learning
-    print("\n### BASELINE 3: Transfer Learning (Pre-train + Fine-tune) ###")
-    print("-" * 60)
-    try:
-        model_transfer = TransferLearningBaseline(
-            input_dim=packet_dim,
-            flow_seq_len=flow_seq_len,
-            num_classes=num_classes
-        )
-
-        train_losses, train_accs = train_supervised_baseline(
-            model_transfer, train_loader,
-            num_epochs=50, learning_rate=0.001, device=DEVICE
-        )
-
-        results_transfer = evaluate_baseline(
-            model_transfer, test_loader, DEVICE)
-        baseline_results['Transfer Learning'] = results_transfer
-
-        print(f"\nResults:")
-        print(
-            f"  Accuracy:  {results_transfer['accuracy']:.4f}")
-        print(
-            f"  F1 Score:  {results_transfer['f1']:.4f}")
-        print(
-            f"  Precision: {results_transfer['precision']:.4f}")
-        print(
-            f"  Recall:    {results_transfer['recall']:.4f}")
-
-    except Exception as e:
-        print(f"Error in Transfer Learning: {str(e)}")
-
-    # BASELINE 4: MAML
-    print("\n### BASELINE 4: MAML (Model-Agnostic Meta-Learning) ###")
-    print("-" * 60)
-    try:
-        model_maml = MAMLBaseline(
-            input_dim=packet_dim,
-            flow_seq_len=flow_seq_len,
-            num_classes=DEFAULT_N_WAY,
-            inner_lr=0.01,
-            num_inner_steps=5
-        )
-
-        train_losses, train_accs = train_supervised_baseline(
-            model_maml, train_loader,
-            num_epochs=50, learning_rate=0.001, device=DEVICE
-        )
-
-        results_maml = evaluate_baseline(model_maml, test_loader, DEVICE)
-        baseline_results['MAML'] = results_maml
-
-        print(f"\nResults:")
-        print(
-            f"  Accuracy:  {results_maml['accuracy']:.4f}")
-        print(
-            f"  F1 Score:  {results_maml['f1']:.4f}")
-        print(
-            f"  Precision: {results_maml['precision']:.4f}")
-        print(
-            f"  Recall:    {results_maml['recall']:.4f}")
-
-    except Exception as e:
-        print(f"Error in MAML: {str(e)}")
-
-    # BASELINE 5: Prototypical Networks
-    print("\n### BASELINE 5: Prototypical Networks (Generic Metric-Learning) ###")
-    print("-" * 60)
-    try:
-        model_proto = PrototypicalNetworkBaseline(
-            input_dim=packet_dim,
-            flow_seq_len=flow_seq_len,
-            embedding_dim=128
-        )
-
-        train_losses, train_accs = train_supervised_baseline(
-            model_proto, train_loader,
-            num_epochs=50, learning_rate=0.001, device=DEVICE
-        )
-
-        results_proto = evaluate_baseline(model_proto, test_loader, DEVICE)
-        baseline_results['Prototypical Networks'] = results_proto
-
-        print(f"\nResults:")
-        print(
-            f"  Accuracy:  {results_proto['accuracy']:.4f}")
-        print(
-            f"  F1 Score:  {results_proto['f1']:.4f}")
-        print(
-            f"  Precision: {results_proto['precision']:.4f}")
-        print(
-            f"  Recall:    {results_proto['recall']:.4f}")
-
-    except Exception as e:
-        print(f"Error in Prototypical Networks: {str(e)}")
-
-    # Summary
-    print("\n" + "="*80)
-    print("BASELINE COMPARISON SUMMARY")
-    print("="*80)
-
-    if baseline_results:
-        baseline_names = list(baseline_results.keys())
-        baseline_accs = [baseline_results[name]['accuracy']
-                         for name in baseline_names]
-
-        for name, acc in zip(baseline_names, baseline_accs):
-            print(
-                f"{name}: {acc:.4f}")
-
-    return baseline_results
-
-
-def visualize_baseline_comparison(baseline_results: Dict, save_name: str = "baselines"):
-    """Visualize baseline comparison results"""
-
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-
-    baseline_names = list(baseline_results.keys())
-    accuracies = [baseline_results[name]['accuracy']
-                  for name in baseline_names]
-    f1_scores = [baseline_results[name]['f1'] for name in baseline_names]
-    precisions = [baseline_results[name]['precision']
-                  for name in baseline_names]
-    recalls = [baseline_results[name]['recall'] for name in baseline_names]
-
-    x = np.arange(len(baseline_names))
-    width = 0.2
-
-    # Accuracy
-    axes[0, 0].bar(x, accuracies, width, label='Accuracy',
-                   color='skyblue', edgecolor='black', alpha=0.8)
-    axes[0, 0].set_ylabel('Accuracy')
-    axes[0, 0].set_title('Baseline Accuracy Comparison')
-    axes[0, 0].set_xticks(x)
-    axes[0, 0].set_xticklabels(baseline_names, rotation=45, ha='right')
-    axes[0, 0].grid(True, alpha=0.3, axis='y')
-
-    # F1 Scores
-    axes[0, 1].bar(x, f1_scores, width, label='F1 Score',
-                   color='lightcoral', edgecolor='black', alpha=0.8)
-    axes[0, 1].set_ylabel('F1 Score')
-    axes[0, 1].set_title('Baseline F1 Score Comparison')
-    axes[0, 1].set_xticks(x)
-    axes[0, 1].set_xticklabels(baseline_names, rotation=45, ha='right')
-    axes[0, 1].grid(True, alpha=0.3, axis='y')
-
-    # Precision vs Recall
-    axes[1, 0].scatter(precisions, recalls, s=200, alpha=0.6,
-                       edgecolor='black', linewidth=1.5)
-    for i, name in enumerate(baseline_names):
-        axes[1, 0].annotate(name, (precisions[i], recalls[i]),
-                            fontsize=9, ha='right')
-    axes[1, 0].set_xlabel('Precision')
-    axes[1, 0].set_ylabel('Recall')
-    axes[1, 0].set_title('Precision vs Recall')
-    axes[1, 0].grid(True, alpha=0.3)
-
-    # All metrics summary
-    all_metrics = np.array([accuracies, f1_scores, precisions, recalls])
-    im = axes[1, 1].imshow(all_metrics, cmap='YlGn', aspect='auto')
-    axes[1, 1].set_xticks(x)
-    axes[1, 1].set_xticklabels(baseline_names, rotation=45, ha='right')
-    axes[1, 1].set_yticks(np.arange(4))
-    axes[1, 1].set_yticklabels(
-        ['Accuracy', 'F1 Score', 'Precision', 'Recall'])
-    axes[1, 1].set_title('All Metrics Heatmap')
-    plt.colorbar(im, ax=axes[1, 1])
-
-    plt.tight_layout()
-    plt.savefig(RESULTS_DIR / f'{save_name}_comparison.png',
-                dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"Baseline comparison visualization saved")
-
-    # Save results
-    with open(RESULTS_DIR / f'{save_name}_results.json', 'w') as f:
-        # Convert numpy types for JSON serialization
-        serializable_results = {}
-        for name, results in baseline_results.items():
-            serializable_results[name] = {
-                'accuracy': float(results['accuracy']),
-                'f1': float(results['f1']),
-                'precision': float(results['precision']),
-                'recall': float(results['recall'])
-            }
-        json.dump(serializable_results, f, indent=2)
-
-
-################################################
-# SECTION 10: MAIN EXECUTION                   #
-################################################
-
-def main():
-    """Main execution function"""
-
-    print("\n" + "="*80)
-    print("MAL-ZDA: Multi-level Adaptive Learning for Zero-Day Attack Detection")
-    print("Hierarchical Few-Shot Learning Framework")
-    print("="*80)
-
-    # Configuration
-    config = {
-        'n_way': DEFAULT_N_WAY,
-        'k_shot': DEFAULT_K_SHOT,
-        'n_query': DEFAULT_N_QUERY,
-        'num_episodes': 1000,
-        'eval_episodes': 200,
-        'use_compositional': True
-    }
-
-    # Check for real dataset
-    data_files = list(DATA_DIR.glob("*.csv"))
-
-    if len(data_files) > 0:
-        print(f"\nFound {len(data_files)} CSV file(s) in dataset directory")
-        print("Using real dataset...")
-
-        # Load real data
-        data_path = data_files[0]
-        print(f"Loading: {data_path.name}")
-
-        try:
-            X_scaled, X_unscaled, y, feature_names, kill_chain_labels = load_and_preprocess_real_data(
-                data_path)
-
-            # Split into train and test
-            X_train, X_test, y_train, y_test, kc_train, kc_test = train_test_split(
-                X_scaled, y, kill_chain_labels,
-                test_size=TEST_SIZE,
-                random_state=RANDOM_STATE,
-                stratify=y
-            )
-
-            print(
-                f"\nTrain set: {X_train.shape}, Test set: {X_test.shape}")
-
-            # Create datasets
-            dataset_train = CyberSecurityDataset(
-                X=X_train,
-                y=y_train,
-                kill_chain_labels=kc_train,
-                feature_names=feature_names
-            )
-
-            dataset_test = CyberSecurityDataset(
-                X=X_test,
-                y=y_test,
-                kill_chain_labels=kc_test,
-                feature_names=feature_names
-            )
-
-        except Exception as e:
-            print(f"\nError loading real data: {str(e)}")
-            print("Falling back to synthetic data generation...")
-
-            dataset_train = CyberSecurityDataset(
-                num_classes=15,
-                samples_per_class=1000,
-                feature_dim=256,
-                temporal_length=100,
-                mode='train'
-            )
-
-            dataset_test = CyberSecurityDataset(
-                num_classes=10,
-                samples_per_class=500,
-                feature_dim=256,
-                temporal_length=100,
-                mode='test'
-            )
-
-    else:
-        print("\nNo CSV files found in dataset directory")
-        print("Generating synthetic data...")
-
-        dataset_train = CyberSecurityDataset(
-            num_classes=15,
-            samples_per_class=1000,
-            feature_dim=256,
-            temporal_length=100,
-            mode='train'
-        )
-
-        dataset_test = CyberSecurityDataset(
-            num_classes=10,
-            samples_per_class=500,
-            feature_dim=256,
-            temporal_length=100,
-            mode='test'
-        )
-
-    # EXPERIMENT 1: Compositional vs Standard Sampling
-    print("\n" + "="*80)
-    print("EXPERIMENT 1: Compositional vs Standard Sampling Comparison")
-    print("="*80)
-
-    print("\n### Running with Compositional Kill-Chain Sampling ###")
-    model_comp, results_comp, train_losses_comp, train_accs_comp = run_experiment(
-        dataset_train, dataset_test,
-        n_way=config['n_way'],
-        k_shot=config['k_shot'],
-        n_query=config['n_query'],
-        num_episodes=config['num_episodes'],
-        eval_episodes=config['eval_episodes'],
-        use_compositional=True,
-        experiment_name="compositional"
-    )
-
-    visualize_training_results(
-        train_losses_comp, train_accs_comp, results_comp,
-        save_prefix="compositional"
-    )
-
-    print("\n### Running with Standard Sampling ###")
-    model_std, results_std, train_losses_std, train_accs_std = run_experiment(
-        dataset_train, dataset_test,
-        n_way=config['n_way'],
-        k_shot=config['k_shot'],
-        n_query=config['n_query'],
-        num_episodes=config['num_episodes'],
-        eval_episodes=config['eval_episodes'],
-        use_compositional=False,
-        experiment_name="standard"
-    )
-
-    visualize_training_results(
-        train_losses_std, train_accs_std, results_std,
-        save_prefix="standard"
-    )
-
-    # Compare results
-    print("\n" + "="*80)
-    print("COMPARATIVE ANALYSIS")
-    print("="*80)
-
-    comp_acc = np.mean(results_comp['accuracies'])
-    std_acc = np.mean(results_std['accuracies'])
-    improvement = (comp_acc - std_acc) * 100
-
-    print(f"\nCompositional Sampling:")
-    print(
-        f"  Accuracy:  {comp_acc:.4f} ± {np.std(results_comp['accuracies']):.4f}")
-    print(
-        f"  F1 Score:  {np.mean(results_comp['f1_scores']):.4f} ± {np.std(results_comp['f1_scores']):.4f}")
-
-    print(f"\nStandard Sampling:")
-    print(
-        f"  Accuracy:  {std_acc:.4f} ± {np.std(results_std['accuracies']):.4f}")
-    print(
-        f"  F1 Score:  {np.mean(results_std['f1_scores']):.4f} ± {np.std(results_std['f1_scores']):.4f}")
-
-    print(f"\nImprovement: {improvement:+.2f}%")
-    print("="*80)
-
-    create_comparison_visualization(
-        results_comp, results_std, "compositional_vs_standard"
-    )
-
-    # EXPERIMENT 2: Ablation Study
-    print("\n" + "="*80)
-    print("EXPERIMENT 2: Ablation Study")
-    print("="*80)
-
-    ablation_results = run_ablation_study(
-        dataset_train, dataset_test,
-        n_way=config['n_way'],
-        k_shot=config['k_shot'],
-        n_query=config['n_query'],
-        num_episodes=500,
-        eval_episodes=100
-    )
-
-    # EXPERIMENT 3: Few-Shot Scaling
-    print("\n" + "="*80)
-    print("EXPERIMENT 3: FEW-SHOT SCALING EXPERIMENT")
-    print("="*80)
-
-    k_shot_values = [1, 3, 5, 10]
-    scaling_results = {}
-
-    for k_shot in k_shot_values:
-        print(f"\n### Testing {k_shot}-shot learning ###")
+    for config in baseline_configs:
+        print(f"\n### {config['name']} ###")
         print("-" * 60)
 
         try:
-            _, eval_results, _, _ = run_experiment(
-                dataset_train, dataset_test,
-                n_way=config['n_way'],
-                k_shot=k_shot,
-                n_query=config['n_query'],
-                num_episodes=800,
-                eval_episodes=150,
-                use_compositional=True,
-                experiment_name=f"scaling_{k_shot}shot"
+            model = _create_baseline_model(
+                config['type'], packet_dim, flow_seq_len, num_classes
             )
 
-            scaling_results[k_shot] = {
-                'accuracy': np.mean(eval_results['accuracies']),
-                'accuracy_std': np.std(eval_results['accuracies']),
-                'f1': np.mean(eval_results['f1_scores']),
-                'f1_std': np.std(eval_results['f1_scores']),
-                'precision': np.mean(eval_results['precisions']),
-                'recall': np.mean(eval_results['recalls'])
-            }
+            train_losses, train_accs = train_supervised_baseline(
+                model, train_loader,
+                num_epochs=50, learning_rate=0.001, device=DEVICE
+            )
 
-            print(f"Results for {k_shot}-shot:")
-            print(
-                f"  Accuracy: {scaling_results[k_shot]['accuracy']:.4f} ± {scaling_results[k_shot]['accuracy_std']:.4f}")
-            print(
-                f"  F1 Score: {scaling_results[k_shot]['f1']:.4f} ± {scaling_results[k_shot]['f1_std']:.4f}")
+            results = evaluate_baseline(model, test_loader, DEVICE)
+            baseline_results[config['name']] = results
+
+            print(f"Results:")
+            print(f"  Accuracy:  {results['accuracy']:.4f}")
+            print(f"  F1 Score:  {results['f1']:.4f}")
 
         except Exception as e:
-            print(f"Error in {k_shot}-shot experiment: {str(e)}")
+            print(f"Error in {config['name']}: {str(e)}")
             continue
-
-    # Visualize scaling results
-    if len(scaling_results) > 0:
-        visualize_scaling_results(scaling_results)
-
-    # Generate final summary report
-    generate_summary_report(
-        results_comp, results_std, ablation_results, scaling_results
-    )
-
-    # RUN BASELINE COMPARISON
-    print("\n" + "="*80)
-    print("EXPERIMENT 4: BASELINE COMPARISON")
-    print("="*80)
-
-    baseline_results = run_baseline_comparison(
-        dataset_train, dataset_test,
-        num_classes=len(dataset_train.class_phase_indices) if hasattr(
-            dataset_train, 'class_phase_indices') else 15,
-        batch_size=BATCH_SIZE
-    )
 
     # Visualize baselines
     visualize_baseline_comparison(baseline_results)
@@ -3296,99 +2801,154 @@ def main():
     print("="*80)
 
 
-def generate_summary_report(
-    results_comp: Dict,
-    results_std: Dict,
-    ablation_results: Dict,
-    scaling_results: Dict
-):
-    """Generate comprehensive summary report"""
+def visualize_baseline_comparison(baseline_results: Dict) -> None:
+    """Visualize baseline model comparison"""
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
-    report_lines = []
-    report_lines.append("="*80)
-    report_lines.append("MAL-ZDA EXPERIMENTAL RESULTS SUMMARY")
-    report_lines.append("="*80)
-    report_lines.append("")
+    models = list(baseline_results.keys())
+    accuracies = [baseline_results[m]['accuracy'] for m in models]
+    f1_scores = [baseline_results[m]['f1'] for m in models]
+    precisions = [baseline_results[m]['precision'] for m in models]
+    recalls = [baseline_results[m]['recall'] for m in models]
 
-    # Compositional vs Standard
-    report_lines.append("1. COMPOSITIONAL vs STANDARD SAMPLING")
-    report_lines.append("-"*80)
-    report_lines.append("")
+    x = np.arange(len(models))
+    width = 0.2
 
-    comp_acc = np.mean(results_comp['accuracies'])
-    comp_f1 = np.mean(results_comp['f1_scores'])
-    std_acc = np.mean(results_std['accuracies'])
-    std_f1 = np.mean(results_std['f1_scores'])
+    axes[0, 0].bar(x, accuracies, width, label='Accuracy')
+    axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].set_title('Baseline Accuracy Comparison')
+    axes[0, 0].set_xticks(x)
+    axes[0, 0].set_xticklabels(models, rotation=45, ha='right')
+    axes[0, 0].grid(True, alpha=0.3)
 
-    report_lines.append(f"Compositional Sampling:")
-    report_lines.append(
-        f"  Accuracy:  {comp_acc:.4f} ± {np.std(results_comp['accuracies']):.4f}")
-    report_lines.append(
-        f"  F1 Score:  {comp_f1:.4f} ± {np.std(results_comp['f1_scores']):.4f}")
-    report_lines.append(
-        f"  Precision: {np.mean(results_comp['precisions']):.4f} ± {np.std(results_comp['precisions']):.4f}")
-    report_lines.append(
-        f"  Recall:    {np.mean(results_comp['recalls']):.4f} ± {np.std(results_comp['recalls']):.4f}")
-    report_lines.append("")
+    axes[0, 1].bar(x, f1_scores, width, label='F1 Score')
+    axes[0, 1].set_ylabel('F1 Score')
+    axes[0, 1].set_title('Baseline F1 Score Comparison')
+    axes[0, 1].set_xticks(x)
+    axes[0, 1].set_xticklabels(models, rotation=45, ha='right')
+    axes[0, 1].grid(True, alpha=0.3)
 
-    report_lines.append(f"Standard Sampling:")
-    report_lines.append(
-        f"  Accuracy:  {std_acc:.4f} ± {np.std(results_std['accuracies']):.4f}")
-    report_lines.append(
-        f"  F1 Score:  {std_f1:.4f} ± {np.std(results_std['f1_scores']):.4f}")
-    report_lines.append(
-        f"  Precision: {np.mean(results_std['precisions']):.4f} ± {np.std(results_std['precisions']):.4f}")
-    report_lines.append(
-        f"  Recall:    {np.mean(results_std['recalls']):.4f} ± {np.std(results_std['recalls']):.4f}")
-    report_lines.append("")
+    axes[1, 0].bar(x, precisions, width, label='Precision')
+    axes[1, 0].set_ylabel('Precision')
+    axes[1, 0].set_title('Baseline Precision Comparison')
+    axes[1, 0].set_xticks(x)
+    axes[1, 0].set_xticklabels(models, rotation=45, ha='right')
+    axes[1, 0].grid(True, alpha=0.3)
 
-    improvement = (comp_acc - std_acc) * 100
-    report_lines.append(f"Improvement: {improvement:+.2f}%")
-    report_lines.append("")
+    axes[1, 1].bar(x, recalls, width, label='Recall')
+    axes[1, 1].set_ylabel('Recall')
+    axes[1, 1].set_title('Baseline Recall Comparison')
+    axes[1, 1].set_xticks(x)
+    axes[1, 1].set_xticklabels(models, rotation=45, ha='right')
+    axes[1, 1].grid(True, alpha=0.3)
 
-    # Ablation Study
-    if ablation_results:
-        report_lines.append("2. ABLATION STUDY RESULTS")
-        report_lines.append("-"*80)
-        report_lines.append("")
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / 'baselines_comparison.png',
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    print("Baseline comparison visualization saved")
 
-        for config_name, results in ablation_results.items():
-            report_lines.append(f"{config_name}:")
-            report_lines.append(
-                f"  Accuracy: {results['accuracy']:.4f} ± {results['accuracy_std']:.4f}")
-            report_lines.append(
-                f"  F1 Score: {results['f1']:.4f} ± {results['f1_std']:.4f}")
-            report_lines.append("")
 
-    # Scaling Results
-    if scaling_results:
-        report_lines.append("3. FEW-SHOT SCALING RESULTS")
-        report_lines.append("-"*80)
-        report_lines.append("")
+def main():
+    """Main entry point for MAL-ZDA framework"""
+    print("\n" + "="*80)
+    print("MAL-ZDA: Multi-level Adaptive Learning for Zero-Day Attack Detection")
+    print("="*80)
 
-        for k_shot, results in scaling_results.items():
-            report_lines.append(f"{k_shot}-shot Learning:")
-            report_lines.append(
-                f"  Accuracy:  {results['accuracy']:.4f} ± {results['accuracy_std']:.4f}")
-            report_lines.append(
-                f"  F1 Score:  {results['f1']:.4f} ± {results['f1_std']:.4f}")
-            report_lines.append(f"  Precision: {results['precision']:.4f}")
-            report_lines.append(f"  Recall:    {results['recall']:.4f}")
-            report_lines.append("")
+    # Check if real data exists, otherwise use synthetic
+    real_data_path = DATA_DIR / "cybersecurity_data.csv"
 
-    report_lines.append("="*80)
-    report_lines.append("END OF REPORT")
-    report_lines.append("="*80)
+    if real_data_path.exists():
+        print(f"\nLoading real data from {real_data_path}")
+        X_scaled, X_unscaled, y, feature_names, kill_chain_labels = \
+            load_and_preprocess_real_data(real_data_path)
 
-    # Save report
-    report_path = RESULTS_DIR / "summary_report.txt"
-    with open(report_path, 'w') as f:
-        f.write('\n'.join(report_lines))
+        # Split into train and test
+        X_train, X_test, y_train, y_test, kc_train, kc_test = train_test_split(
+            X_scaled, y, kill_chain_labels, test_size=TEST_SIZE, random_state=RANDOM_STATE
+        )
 
-    print(f"\nSummary report saved to {report_path}")
+        dataset_train = CyberSecurityDataset(
+            X=X_train, y=y_train, kill_chain_labels=kc_train,
+            feature_names=feature_names, mode='train'
+        )
+        dataset_test = CyberSecurityDataset(
+            X=X_test, y=y_test, kill_chain_labels=kc_test,
+            feature_names=feature_names, mode='test'
+        )
+    else:
+        print("\nGenerating synthetic datasets...")
+        dataset_train = CyberSecurityDataset(
+            num_classes=15, samples_per_class=100, mode='train'
+        )
+        dataset_test = CyberSecurityDataset(
+            num_classes=15, samples_per_class=50, mode='test'
+        )
 
-    # Print to console
-    print("\n" + '\n'.join(report_lines))
+    # Run MAL-ZDA with compositional sampling
+    print("\n### Experiment 1: MAL-ZDA with Compositional Sampling ###")
+    model_comp, results_comp, losses_comp, accs_comp = run_experiment(
+        dataset_train, dataset_test,
+        n_way=5, k_shot=1, n_query=15,
+        num_episodes=500, eval_episodes=200,
+        use_compositional=True,
+        experiment_name="malzda_compositional"
+    )
+    visualize_training_results(
+        losses_comp, accs_comp, results_comp, "compositional")
+
+    # Run MAL-ZDA with standard sampling
+    print("\n### Experiment 2: MAL-ZDA with Standard Sampling ###")
+    model_std, results_std, losses_std, accs_std = run_experiment(
+        dataset_train, dataset_test,
+        n_way=5, k_shot=1, n_query=15,
+        num_episodes=500, eval_episodes=200,
+        use_compositional=False,
+        experiment_name="malzda_standard"
+    )
+    visualize_training_results(losses_std, accs_std, results_std, "standard")
+
+    # Compare approaches
+    print("\n### Comparison: Compositional vs Standard ###")
+    create_comparison_visualization(
+        results_comp, results_std, "compositional_vs_standard")
+
+    # Run ablation study
+    print("\n### Experiment 3: Ablation Study ###")
+    ablation_results = run_ablation_study(
+        dataset_train, dataset_test,
+        n_way=5, k_shot=1, n_query=15,
+        num_episodes=300, eval_episodes=100
+    )
+
+    # Run scaling experiment
+    print("\n### Experiment 4: k-shot Scaling ###")
+    scaling_results = {}
+    for k_shot in [1, 3, 5, 10]:
+        print(f"\nTesting with k_shot={k_shot}")
+        _, eval_res, _, _ = run_experiment(
+            dataset_train, dataset_test,
+            n_way=5, k_shot=k_shot, n_query=15,
+            num_episodes=200, eval_episodes=100,
+            use_compositional=True,
+            experiment_name=f"malzda_kshot_{k_shot}"
+        )
+        scaling_results[k_shot] = {
+            'accuracy': np.mean(eval_res['accuracies']),
+            'accuracy_std': np.std(eval_res['accuracies']),
+            'f1': np.mean(eval_res['f1_scores']),
+            'precision': np.mean(eval_res['precisions']),
+            'recall': np.mean(eval_res['recalls'])
+        }
+    visualize_scaling_results(scaling_results, "scaling_study")
+
+    # Run baseline comparisons
+    print("\n### Experiment 5: Baseline Comparison ###")
+    baseline_results = run_baseline_comparison(dataset_train, dataset_test)
+
+    print("\n" + "="*80)
+    print("ALL EXPERIMENTS COMPLETED SUCCESSFULLY")
+    print("="*80)
 
 
 ################################################

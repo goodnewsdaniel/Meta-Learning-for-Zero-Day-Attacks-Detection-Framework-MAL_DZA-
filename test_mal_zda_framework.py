@@ -9,7 +9,7 @@ MAL-ZDA Test Suite - COMPLETE & CORRECT
 Comprehensive unit tests for all components     '''
 ################################################
 
-from mal_dza_algorithm import (
+from mal_zda_framework import (
     CyberSecurityDataset,
     HierarchicalEncoder,
     MALZDA,
