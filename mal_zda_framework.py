@@ -223,8 +223,8 @@ def load_and_preprocess_real_data(
         # Handle target column - ensure it's numeric
         if df[target_col].dtype == 'object':
             le_target = LabelEncoder()
-            df[target_col] = le_target.fit_transform(
-                df[target_col].astype(str))
+            encoded_vals = le_target.fit_transform(df[target_col].astype(str))
+            df[target_col] = np.array(encoded_vals, dtype=np.int64)
 
         # Handle class imbalance
         class_counts = df[target_col].value_counts()
@@ -249,7 +249,8 @@ def load_and_preprocess_real_data(
         X_scaled = scaler.fit_transform(X)
 
         # Generate synthetic kill-chain labels based on class distribution
-        unique_classes = np.unique(y)
+        unique_classes = np.array (list(set(y)), dtype=np.int64)
+        unique_classes.sort()
         kill_chain_labels = np.zeros(len(y), dtype=np.int64)
 
         for i, sample_class in enumerate(y):
@@ -274,12 +275,22 @@ def load_and_preprocess_real_data(
         print(f"Final shape: X={X_scaled.shape}, y={y.shape}")
         print(f"Features: {len(feature_names)}")
         print(f"Classes: {len(unique_classes)}")
-        print(
-            f"Class distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
-        print(
-            f"Kill-chain distribution: {dict(zip(*np.unique(kill_chain_labels, return_counts=True)))}")
+        # Class distribution
+        from collections import Counter
+        class_dist = Counter(y)
+        print(f"Class distribution: {dict(class_dist)}")
+        # Kill-chain distribution
+        kc_dist = Counter(kill_chain_labels)
+        print(f"Kill-chain distribution: {dict(kc_dist)}")
 
-        return X_scaled, X_unscaled, y, feature_names, kill_chain_labels
+        # Ensure all return values are proper numpy arrays
+        return (
+            np.asarray(X_scaled, dtype=np.ndarray),
+            np.asarray(X_unscaled, dtype=np.ndarray),
+            np.asarray(y, dtype=np.int64),
+            feature_names,
+            np.asarray(kill_chain_labels, dtype=np.int64)
+        )
 
     except Exception as e:
         print(f"Error loading data: {str(e)}")
@@ -314,6 +325,11 @@ class CyberSecurityDataset(Dataset):
             self._load_real_data(X, y, kill_chain_labels, feature_names)
         else:
             self._generate_synthetic_data(num_classes, samples_per_class)
+
+    def __iter__(self):
+        """Make dataset iterable"""
+        for i in range(len(self.data)):
+            yield self.data[i]
 
     def _load_real_data(
         self,
@@ -990,10 +1006,10 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
         Dictionary containing accuracy, f1, precision, and recall scores
     """
     return {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'f1': f1_score(y_true, y_pred, average='macro', zero_division=0),
-        'precision': precision_score(y_true, y_pred, average='macro', zero_division=0),
-        'recall': recall_score(y_true, y_pred, average='macro', zero_division=0)
+        'accuracy': float(accuracy_score(y_true, y_pred)),
+        'f1': float(f1_score(y_true, y_pred, average='macro', zero_division=0)),
+        'precision': float(precision_score(y_true, y_pred, average='macro', zero_division=0)),
+        'recall': float(recall_score(y_true, y_pred, average='macro', zero_division=0))
     }
 
 
@@ -1256,7 +1272,7 @@ def run_experiment(
         embedding_dim=DEFAULT_EMBEDDING_DIM
     )
 
-    trainer = MALZDATrainer(model, learning_rate=0.001, device=DEVICE)
+    trainer = MALZDATrainer(model, learning_rate=0.001, device=str(DEVICE))
 
     # Training loop
     print(f"\nTraining for {num_episodes} episodes...")
@@ -1474,7 +1490,7 @@ def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str) 
     if all_valid_values:
         y_min = max(0, min(all_valid_values) - 0.1)
         y_max = min(1.0, max(all_valid_values) + 0.1)
-        ax.set_ylim([y_min, y_max])
+        ax.set_ylim((y_min, y_max))
 
     plt.tight_layout()
     plt.savefig(
@@ -1680,11 +1696,10 @@ def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str) -> No
         'Recall': eval_results['recalls']
     }
 
-    bp = ax.boxplot(
-        [metrics_data[k] for k in metrics_data.keys()],
-        labels=list(metrics_data.keys()),
-        patch_artist=True
-    )
+    metric_values = [metrics_data[k] for k in metrics_data.keys()]
+    metric_labels = list(metrics_data.keys())
+    bp = ax.boxplot(metric_values, patch_artist=True)
+    ax.set_xticklabels(metric_labels)
     for patch in bp['boxes']:
         patch.set_facecolor('lightblue')
         patch.set_edgecolor('black')
@@ -1904,8 +1919,8 @@ def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, 
     fig, ax = plt.subplots(figsize=(10, 6))
 
     data_acc = [results_comp['accuracies'], results_std['accuracies']]
-    bp = ax.boxplot(
-        data_acc, labels=['Compositional', 'Standard'], patch_artist=True)
+    bp = ax.boxplot(data_acc, patch_artist=True)
+    ax.set_xticklabels(['Compositional', 'Standard'])
     bp['boxes'][0].set_facecolor('lightblue')
     bp['boxes'][0].set_edgecolor('black')
     bp['boxes'][1].set_facecolor('lightcoral')
@@ -1930,8 +1945,8 @@ def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_n
     fig, ax = plt.subplots(figsize=(10, 6))
 
     data_f1 = [results_comp['f1_scores'], results_std['f1_scores']]
-    bp = ax.boxplot(
-        data_f1, labels=['Compositional', 'Standard'], patch_artist=True)
+    bp = ax.boxplot(data_f1, patch_artist=True)
+    ax.set_xticklabels(['Compositional', 'Standard'])
     bp['boxes'][0].set_facecolor('lightblue')
     bp['boxes'][0].set_edgecolor('black')
     bp['boxes'][1].set_facecolor('lightcoral')
@@ -2098,7 +2113,7 @@ def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str) -
     ax.set_xticks(x)
     ax.set_xticklabels(configs, rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim([0, max(accuracies) * 1.2] if max(accuracies) > 0 else [0, 1])
+    ax.set_ylim((0, max(accuracies) * 1.2) if max(accuracies) > 0 else (0, 1))
 
     plt.tight_layout()
     plt.savefig(
@@ -2132,7 +2147,7 @@ def _save_individual_ablation_f1(ablation_results: Dict, save_name: str) -> None
     ax.set_xticks(x)
     ax.set_xticklabels(configs, rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim([0, max(f1_scores) * 1.2] if max(f1_scores) > 0 else [0, 1])
+    ax.set_ylim((0, max(f1_scores) * 1.2) if max(f1_scores) > 0 else (0, 1))
 
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / f'{save_name}_f1.png',
@@ -2722,10 +2737,11 @@ def evaluate_baseline(
     all_labels = np.array(all_labels)
 
     metrics = compute_metrics(all_labels, all_preds)
-    metrics['predictions'] = all_preds
-    metrics['labels'] = all_labels
+    metrics_extended = dict(metrics)
+    metrics_extended['predictions'] = all_preds.tolist()
+    metrics_extended['labels'] = all_labels.tolist()
 
-    return metrics
+    return metrics_extended
 
 
 def run_baseline_comparison(
@@ -2767,10 +2783,10 @@ def run_baseline_comparison(
 
             train_losses, train_accs = train_supervised_baseline(
                 model, train_loader,
-                num_epochs=50, learning_rate=0.001, device=DEVICE
+                num_epochs=50, learning_rate=0.001, device=str(DEVICE)
             )
 
-            results = evaluate_baseline(model, test_loader, DEVICE)
+            results = evaluate_baseline(model, test_loader, str(DEVICE))
             baseline_results[config['name']] = results
 
             print(f"Results:")
@@ -2799,6 +2815,8 @@ def run_baseline_comparison(
     print("    * baselines_comparison.png")
     print("  - Summary report: results_malzda/summary_report.txt")
     print("="*80)
+    
+    return baseline_results
 
 
 def visualize_baseline_comparison(baseline_results: Dict) -> None:

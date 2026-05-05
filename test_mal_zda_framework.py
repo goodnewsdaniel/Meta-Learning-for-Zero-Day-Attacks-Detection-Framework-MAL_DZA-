@@ -1493,7 +1493,7 @@ class TestDataPreprocessing(unittest.TestCase):
             data = {
                 f'feature_{i}': np.random.randn(n_samples) for i in range(n_features)
             }
-            data['target'] = np.random.randint(0, 5, n_samples)
+            data['target'] = np.random.randint(0, 5, n_samples).astype(np.float64)
 
             df = pd.DataFrame(data)
             df.to_csv(csv_path, index=False)
@@ -1528,7 +1528,7 @@ class TestDataPreprocessing(unittest.TestCase):
             data = {
                 f'feature_{i}': np.random.randn(n_samples) for i in range(n_features)
             }
-            data['target'] = np.random.randint(0, 3, n_samples)
+            data['target'] = np.random.randint(0, 3, n_samples).astype(np.float64)
 
             df = pd.DataFrame(data)
             df.to_csv(csv_path, index=False)
@@ -1557,7 +1557,7 @@ class TestDataPreprocessing(unittest.TestCase):
             data = {
                 feature: np.random.randn(n_samples) for feature in custom_features
             }
-            data['target'] = np.random.randint(0, 3, n_samples)
+            data['target'] = np.random.randint(0, 3, n_samples).astype(np.float64)
 
             df = pd.DataFrame(data)
             df.to_csv(csv_path, index=False)

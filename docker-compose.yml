@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  mal-zda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mal-zda-framework
+    
+    # Mount volumes for data and outputs
+    volumes:
+      - ./dataset:/app/dataset
+      - ./outputs:/app/outputs
+      - ./results:/app/results
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+    
+    # Keep container running (optional)
+    stdin_open: true
+    tty: true
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Optional: GPU support version
+  mal-zda-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: mal-zda-framework-gpu
+    
+    volumes:
+      - ./dataset:/app/dataset
+      - ./outputs:/app/outputs
+      - ./results:/app/results
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+    
+    stdin_open: true
+    tty: true
+    
+    # GPU runtime
+    runtime: nvidia
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

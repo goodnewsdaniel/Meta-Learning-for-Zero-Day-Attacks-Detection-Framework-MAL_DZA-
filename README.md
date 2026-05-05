@@ -188,8 +188,8 @@ Input Data (Network Traffic)
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/goodnewsdaniel/Meta-Learning-for-Zero-Day-Attacks-Detection-Framework-MAL_DZA.git
-cd malzda
+git clone https://github.com/goodnewsdaniel/Meta-Learning-for-Zero-Day-Attacks-Detection-Framework.git
+cd Meta-Learning-for-Zero-Day-Attacks-Detection-Framework
 ```
 
 ### Step 2: Create Virtual Environment
@@ -228,6 +228,23 @@ scipy>=1.7.0
 ```bash
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
 ```
+
+### Step 5 (Optional): Docker Setup
+
+For containerized deployment:
+
+```bash
+# Build Docker image
+docker build -t mal-zda:latest .
+
+# Run container
+docker run -it -v "$(pwd)/dataset:/app/dataset" -v "$(pwd)/outputs:/app/outputs" mal-zda:latest
+
+# Or use Docker Compose
+docker-compose up
+```
+
+See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for detailed Docker instructions.
 
 ---
 
@@ -604,14 +621,17 @@ MAL-ZDA is evaluated against 5 diverse baseline approaches to demonstrate empiri
 
 ### Comparative Results
 
-| Baseline | Accuracy | F1 Score | Key Advantage |
-|----------|----------|----------|---------------|
+| Baseline | Accuracy* | F1 Score* | Key Advantage |
+|----------|-----------|-----------|---------------|
+
 | Supervised CNN-LSTM | ~95% | ~93% | Upper bound (full supervision) |
 | MAML | ~82% | ~80% | Competitive meta-learning |
 | Transfer Learning | ~80% | ~78% | Pre-training leverage |
 | Prototypical Networks | ~75% | ~73% | Simple metric-learning |
 | One-Class SVM | ~70% | ~68% | Anomaly detection |
 | **MAL-ZDA (Proposed)** | **~88%** | **~85%** | **Hierarchical + Meta-learning** |
+
+*Expected typical values on benchmark datasets (CICIDS2017/UNSW-NB15)
 
 ### Baseline Implementation Details
 
@@ -622,7 +642,7 @@ All baselines are implemented in the same framework with:
 - Same train/test splits
 - Unified result reporting
 
-See the [Baseline Comparisons Documentation](BASELINES_QUICK_START.md) for detailed implementation information.
+See the [CODE_NAVIGATION_GUIDE.md](CODE_NAVIGATION_GUIDE.md) for detailed implementation information.
 
 ---
 
@@ -987,7 +1007,7 @@ If you use MAL-ZDA in your research, please cite:
 ## 📧 Contact
 
 **Author**: Goodnews Daniel (PhD Candidate)  
-**Email**: 222166453@student.uj.ac.za  
+**Email**: <222166453@student.uj.ac.za>  
 **Institution**: University of Johannesburg  
 **Department**: Electrical & Electronics Engineering  
 **Faculty**: Engineering & the Built Environment
@@ -1005,7 +1025,8 @@ For questions, issues, or contributions:
 2. **Support Channels**
    - Open an issue on GitHub
    - Email the author
-   - Check documentation files
+   - Check [CODE_NAVIGATION_GUIDE.md](CODE_NAVIGATION_GUIDE.md) for code structure
+   - See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for containerization help
 
 ---
 
