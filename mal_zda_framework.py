@@ -183,7 +183,7 @@ def load_and_preprocess_real_data(
 
         feature_names = df.columns[:-1].tolist()
         feature_cols = df.columns[:-1]
-        target_col = df.columns[-1]
+        target_col = str(df.columns[-1])
 
         # Handle numeric features
         numeric_features = df[feature_cols].select_dtypes(
@@ -232,7 +232,7 @@ def load_and_preprocess_real_data(
 
         if min_class_count < 2:
             print("\nWarning: Severe class imbalance detected!")
-            valid_classes = class_counts[class_counts >= 2].index
+            valid_classes = list(class_counts[class_counts >= 2].index)
             df = df[df[target_col].isin(valid_classes)]
             print(
                 f"Keeping only classes with ≥2 samples: {list(valid_classes)}")
@@ -249,7 +249,7 @@ def load_and_preprocess_real_data(
         X_scaled = scaler.fit_transform(X)
 
         # Generate synthetic kill-chain labels based on class distribution
-        unique_classes = np.array (list(set(y)), dtype=np.int64)
+        unique_classes = np.array(list(set(y)), dtype=np.int64)
         unique_classes.sort()
         kill_chain_labels = np.zeros(len(y), dtype=np.int64)
 
@@ -518,8 +518,8 @@ class CyberSecurityDataset(Dataset):
 
                 self.data.append(sample)
 
-        print(f"✓ Generated {len(self.data)} synthetic samples "
-              f"({num_classes} classes × {samples_per_class} samples)")
+        print(f"Generated {len(self.data)} synthetic samples "
+              f"({num_classes} classes x {samples_per_class} samples)")
 
     def __len__(self):
         return len(self.data)
@@ -803,7 +803,7 @@ class CompositionalTaskSampler:
         self.n_way = min(self.original_n_way, max(2, available_classes_count))
 
         if self.n_way < self.original_n_way:
-            print(f"\n⚠️  Warning: Adjusted n_way from {self.original_n_way} to {self.n_way} "
+            print(f"\nWarning: Adjusted n_way from {self.original_n_way} to {self.n_way} "
                   f"(only {available_classes_count} classes available)")
 
     def _build_indices(self):
@@ -1113,7 +1113,7 @@ class MALZDATrainer:
 
         if np.isnan(loss_val) or np.isinf(loss_val):
             print(
-                f"⚠️  Warning: Invalid loss detected ({loss_val}), skipping episode")
+                f"Warning: Invalid loss detected ({loss_val}), skipping episode")
             return float('nan'), 0.0
 
         # Compute accuracy
@@ -1359,7 +1359,7 @@ def run_experiment(
             continue
 
     print(
-        f"✓ Completed {successful_eval_episodes}/{eval_episodes} evaluation episodes")
+        f"Completed {successful_eval_episodes}/{eval_episodes} evaluation episodes")
 
     # Print results with safety checks
     print("\n" + "="*80)
@@ -1381,7 +1381,7 @@ def run_experiment(
         print(f"Test Precision: {prec_mean:.4f} ± {prec_std:.4f}")
         print(f"Test Recall:    {rec_mean:.4f} ± {rec_std:.4f}")
     else:
-        print("⚠️  No successful evaluation episodes!")
+        print("No successful evaluation episodes!")
         acc_mean = 0.0
         f1_mean = 0.0
         prec_mean = 0.0
@@ -1457,7 +1457,7 @@ def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str) 
                    np.isnan(precisions) | np.isnan(recalls))
 
     if not np.any(valid_mask):
-        print(f"⚠️  Warning: All metrics are NaN for {save_name}")
+        print(f"Warning: All metrics are NaN for {save_name}")
         plt.close(fig)
         return
 
@@ -1490,7 +1490,7 @@ def _save_individual_scaling_all_metrics(scaling_results: Dict, save_name: str) 
     if all_valid_values:
         y_min = max(0, min(all_valid_values) - 0.1)
         y_max = min(1.0, max(all_valid_values) + 0.1)
-        ax.set_ylim((y_min, y_max))
+        ax.set_ylim(y_min, y_max)
 
     plt.tight_layout()
     plt.savefig(
@@ -1701,9 +1701,9 @@ def _save_individual_metrics_boxplot(eval_results: Dict, save_prefix: str) -> No
     bp = ax.boxplot(metric_values, patch_artist=True)
     ax.set_xticklabels(metric_labels)
     for patch in bp['boxes']:
-        patch.set_facecolor('lightblue')
-        patch.set_edgecolor('black')
-        patch.set_linewidth(1.5)
+        patch.set_facecolor('lightblue')  # type: ignore
+        patch.set_edgecolor('black')  # type: ignore
+        patch.set_linewidth(1.5)  # type: ignore
 
     ax.set_ylabel('Score', fontsize=12)
     ax.set_title('Evaluation Metrics Distribution',
@@ -1921,10 +1921,10 @@ def _save_individual_accuracy_comparison(results_comp: Dict, results_std: Dict, 
     data_acc = [results_comp['accuracies'], results_std['accuracies']]
     bp = ax.boxplot(data_acc, patch_artist=True)
     ax.set_xticklabels(['Compositional', 'Standard'])
-    bp['boxes'][0].set_facecolor('lightblue')
-    bp['boxes'][0].set_edgecolor('black')
-    bp['boxes'][1].set_facecolor('lightcoral')
-    bp['boxes'][1].set_edgecolor('black')
+    bp['boxes'][0].set_facecolor('lightblue')  # type: ignore
+    bp['boxes'][0].set_edgecolor('black')  # type: ignore
+    bp['boxes'][1].set_facecolor('lightcoral')  # type: ignore
+    bp['boxes'][1].set_edgecolor('black')  # type: ignore
 
     ax.set_ylabel('Accuracy', fontsize=12)
     ax.set_title('Accuracy Comparison: Compositional vs Standard',
@@ -1947,10 +1947,10 @@ def _save_individual_f1_comparison(results_comp: Dict, results_std: Dict, save_n
     data_f1 = [results_comp['f1_scores'], results_std['f1_scores']]
     bp = ax.boxplot(data_f1, patch_artist=True)
     ax.set_xticklabels(['Compositional', 'Standard'])
-    bp['boxes'][0].set_facecolor('lightblue')
-    bp['boxes'][0].set_edgecolor('black')
-    bp['boxes'][1].set_facecolor('lightcoral')
-    bp['boxes'][1].set_edgecolor('black')
+    bp['boxes'][0].set_facecolor('lightblue')  # type: ignore
+    bp['boxes'][0].set_edgecolor('black')  # type: ignore
+    bp['boxes'][1].set_facecolor('lightcoral')  # type: ignore
+    bp['boxes'][1].set_edgecolor('black')  # type: ignore
 
     ax.set_ylabel('F1 Score', fontsize=12)
     ax.set_title('F1 Score Comparison: Compositional vs Standard',
@@ -2113,7 +2113,8 @@ def _save_individual_ablation_accuracy(ablation_results: Dict, save_name: str) -
     ax.set_xticks(x)
     ax.set_xticklabels(configs, rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim((0, max(accuracies) * 1.2) if max(accuracies) > 0 else (0, 1))
+    ylim_val = (0, max(accuracies) * 1.2) if max(accuracies) > 0 else (0, 1)
+    ax.set_ylim(ylim_val[0], ylim_val[1])
 
     plt.tight_layout()
     plt.savefig(
@@ -2147,7 +2148,8 @@ def _save_individual_ablation_f1(ablation_results: Dict, save_name: str) -> None
     ax.set_xticks(x)
     ax.set_xticklabels(configs, rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim((0, max(f1_scores) * 1.2) if max(f1_scores) > 0 else (0, 1))
+    ylim_val = (0, max(f1_scores) * 1.2) if max(f1_scores) > 0 else (0, 1)
+    ax.set_ylim(ylim_val[0], ylim_val[1])
 
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / f'{save_name}_f1.png',
