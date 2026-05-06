@@ -689,9 +689,9 @@ class MALZDA(nn.Module):
 
         # Move tensors to model's device
         device = next(self.parameters()).device
-        packet_data = packet_data.to(device)
-        flow_data = flow_data.to(device)
-        campaign_data = campaign_data.to(device)
+        packet_data = packet_data.to(device).float()
+        flow_data = flow_data.to(device).float()
+        campaign_data = campaign_data.to(device).float()
 
         return self.hierarchical_encoder(packet_data, flow_data, campaign_data)
 
@@ -2679,8 +2679,8 @@ def train_supervised_baseline(
         batch_count = 0
 
         for batch in train_loader:
-            packet_data = batch['packet'].to(device)
-            flow_data = batch['flow'].to(device)
+            packet_data = batch['packet'].to(device).float()
+            flow_data = batch['flow'].to(device).float()
             labels = torch.tensor(
                 batch['class_id'], dtype=torch.long).to(device)
 
@@ -2724,8 +2724,8 @@ def evaluate_baseline(
 
     with torch.no_grad():
         for batch in test_loader:
-            packet_data = batch['packet'].to(device)
-            flow_data = batch['flow'].to(device)
+            packet_data = batch['packet'].to(device).float()
+            flow_data = batch['flow'].to(device).float()
             labels = torch.tensor(
                 batch['class_id'], dtype=torch.long).to(device)
 
